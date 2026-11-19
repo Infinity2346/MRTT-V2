@@ -1,0 +1,40 @@
+# Machine-local Android SDK paths and signing secrets
+/local.properties
+*.keystore
+*.jks
+*.p12
+# Постоянный бета-ключ подписи: без него обновления конфликтуют с установленной версией.
+!/signing/mrtt-beta.p12
+
+# Compiled code and generated manifests
+/.gradle/
+/.kotlin/
+/build/
+/app/build/
+/app/release/
+/app/src/main/jniLibs/
+/app/src/main/libclient.provenance.json
+/app/src/main/assets/mrtt-linux-*
+/app/src/main/assets/mrtt.server-provenance.json
+/rust-client/target/
+/rust-server/target/
+/rust-server/dist/
+/tools/MrttMaxToken/bin/
+/tools/MrttMaxToken/obj/
+
+# Tokens/credentials
+call.json
+max-profile/
+*.log
+.idea/
+*.iml
+apk/
+*.apk
+*.aab
+.local/
+
+# Сгенерированные артефакты анализа кода: 55 МБ, к сборке отношения не имеют
+/graphify-out/
+
+# Готовые архивы для переноса в другой репозиторий
+/dist-for-author/

@@ -1,0 +1,527 @@
+package com.mrtt.client.ui
+
+import com.mrtt.client.ui.design.MrttStyleShapes
+import android.content.Intent
+import android.net.VpnService
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mrtt.client.BatterySaver
+import com.mrtt.client.ConnectionSource
+import com.mrtt.client.ConnectionStartBlocker
+import com.mrtt.client.ConnectionStartPolicy
+import com.mrtt.client.MrttConstants
+import com.mrtt.client.SettingsStore
+import com.mrtt.client.StoredSecretState
+import com.mrtt.client.TunnelAuthSnapshot
+import com.mrtt.client.TunnelManager
+import com.mrtt.client.TunnelService
+import com.mrtt.client.VkHashValidationCodec
+import com.mrtt.client.newTunnelSessionId
+import com.mrtt.client.resolveConnectionSource
+import com.mrtt.client.showRaisedToast
+import com.mrtt.client.ui.components.MrttScreen
+import com.mrtt.client.ui.design.MrttShapes
+import com.mrtt.client.ui.design.mrttGlass
+import com.mrtt.client.ui.utils.parseMrttLink
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import java.util.Locale
+
+@Composable
+internal fun ConnectionTab(
+    settingsStore: SettingsStore,
+    tunnelAuthSettings: TunnelAuthSnapshot,
+    onInvalidConfiguration: () -> Unit,
+    onProfileRequired: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val connectionPassword = tunnelAuthSettings.connectionPassword
+    val tunnelRunning by TunnelManager.running.collectAsStateWithLifecycle()
+    val tunnelStarting by TunnelManager.starting.collectAsStateWithLifecycle()
+    val tunnelStopping by TunnelManager.stopping.collectAsStateWithLifecycle()
+    val autoPausedForWifi by TunnelManager.autoPausedForWifi.collectAsStateWithLifecycle()
+    val cooldownActive by TunnelManager.cooldownActive.collectAsStateWithLifecycle()
+
+    val mrttLinkMode = tunnelAuthSettings.mrttLinkMode
+    val mrttLink = tunnelAuthSettings.mrttLink
+    val peer by settingsStore.peer.collectAsStateWithLifecycle(initialValue = "")
+    val vkHashes by settingsStore.vkHashes.collectAsStateWithLifecycle(initialValue = "")
+    val vkHashCheckResultsJson by settingsStore.vkHashCheckResults.collectAsStateWithLifecycle(initialValue = "{}")
+    val workersPerHash by settingsStore.workersPerHash.collectAsStateWithLifecycle(initialValue = MrttConstants.Tunnel.DEFAULT_WORKERS)
+    val sni by settingsStore.sni.collectAsStateWithLifecycle(initialValue = "")
+    val turnTransport by settingsStore.turnTransport.collectAsStateWithLifecycle(initialValue = MrttConstants.Tunnel.DEFAULT_TURN_TRANSPORT)
+    val srtpMode by settingsStore.srtpMode.collectAsStateWithLifecycle(initialValue = SettingsStore.cachedSrtpMode ?: MrttConstants.SrtpMode.DEFAULT)
+    val customTurnIps by settingsStore.customTurnIps.collectAsStateWithLifecycle(initialValue = "")
+    val tunnelMtu by settingsStore.tunnelMtu.collectAsStateWithLifecycle(initialValue = MrttConstants.Vpn.DEFAULT_MTU)
+    val manualPortsEnabled by settingsStore.manualPortsEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val serverPeerPort by settingsStore.serverPeerPort.collectAsStateWithLifecycle(
+        initialValue = MrttConstants.Network.DEFAULT_SERVER_PEER_PORT,
+    )
+    val vkAuthMode by settingsStore.vkAuthMode.collectAsStateWithLifecycle(initialValue = MrttConstants.VkAuth.MODE_CALLS)
+    val captchaMode by settingsStore.captchaMode.collectAsStateWithLifecycle(initialValue = "auto")
+    val captchaSolveMethod by settingsStore.captchaSolveMethod.collectAsStateWithLifecycle(initialValue = "auto")
+    val activeFingerprint by settingsStore.selectedFingerprint.collectAsStateWithLifecycle(initialValue = MrttConstants.Tunnel.DEFAULT_FINGERPRINT)
+    val activeClientIds by settingsStore.activeClientIds.collectAsStateWithLifecycle(initialValue = MrttConstants.Tunnel.DEFAULT_CLIENT_IDS)
+    val savedHashMode by settingsStore.vkHashMode.collectAsStateWithLifecycle(initialValue = SettingsStore.cachedVkHashMode)
+    val savedVkAccessToken by settingsStore.vkSession.collectAsStateWithLifecycle(initialValue = SettingsStore.cachedVkSession)
+    val savedMaxGroupId by settingsStore.maxGroupId.collectAsStateWithLifecycle(initialValue = "")
+    val savedMaxAccessToken by settingsStore.maxAccessToken.collectAsStateWithLifecycle(initialValue = "")
+    val transportMode by settingsStore.transportMode.collectAsStateWithLifecycle(initialValue = MrttConstants.Transport.MODE_VK)
+    val jitsiRoomOverride by settingsStore.jitsiRoomOverride.collectAsStateWithLifecycle(initialValue = "")
+
+    val activeProfileId by settingsStore.activeConnectionProfileId.collectAsStateWithLifecycle(initialValue = "")
+    // Старые установки: ссылка из настроек становится профилем, иначе подключение было бы запрещено.
+    LaunchedEffect(Unit) { com.mrtt.client.profiles.ProfileRepository(context).migrateLegacy() }
+
+    var pendingStartAfterVpnPermission by remember { mutableStateOf(false) }
+
+    val parsedLink = remember(mrttLink) { parseMrttLink(mrttLink) }
+    val linkHashes = parsedLink?.hashes.orEmpty()
+    val linkTokenActive = mrttLinkMode && parsedLink?.vkAccessToken?.isNotEmpty() == true
+    val rawManualHashes = remember(vkHashes) {
+        vkHashes.split(Regex("[,\\s\\n]+"))
+            .map(String::trim)
+            .filter { it.length >= 16 }
+            .distinct()
+    }
+    val activeManualHashes = remember(vkHashes, vkHashCheckResultsJson) {
+        VkHashValidationCodec.active(
+            rawManualHashes,
+            VkHashValidationCodec.decode(vkHashCheckResultsJson),
+        )
+    }
+    val manualHashes = if (activeManualHashes.isNotEmpty()) activeManualHashes else rawManualHashes
+    val accountAutoJsMode = vkAuthMode == MrttConstants.VkAuth.MODE_AUTO_JS
+    val hashSettingsLoaded = savedHashMode != null && savedVkAccessToken != null
+    val autoHashMode = accountAutoJsMode || (
+        savedHashMode != null && savedHashMode != MrttConstants.VkAutoHash.MODE_MANUAL
+    )
+    val vkTokenActive = savedVkAccessToken?.isNotBlank() == true
+    val maxLinkActive = mrttLinkMode && !parsedLink?.maxGroupId.isNullOrBlank()
+    val maxBindingActive = savedMaxGroupId.isNotBlank()
+    val maxReady = (maxLinkActive || maxBindingActive) && savedMaxAccessToken.isNotBlank()
+    // Токен из ссылки — аккаунт сервера: он приходит явно и работает сразу,
+    // даже если в приложении не настроен ни один режим хешей.
+    val hashesReady = when {
+        transportMode == MrttConstants.Transport.MODE_MAX -> maxReady
+        transportMode == MrttConstants.Transport.MODE_JITSI ->
+            jitsiRoomOverride.isNotBlank() || (mrttLinkMode && !parsedLink?.jitsiRoom.isNullOrBlank())
+        linkTokenActive -> true
+        // Профиль по ссылке: готовые хеши или свой вход в VK достаточны, чтобы начать.
+        mrttLinkMode && (linkHashes.isNotEmpty() || manualHashes.isNotEmpty()) -> true
+        mrttLinkMode && autoHashMode && vkTokenActive -> true
+        else -> hashSettingsLoaded && ConnectionStartPolicy.hasReadyVkCredentials(
+            linkMode = mrttLinkMode,
+            linkHashCount = linkHashes.size,
+            linkTokenPresent = linkTokenActive,
+            autoHashMode = autoHashMode,
+            storedTokenPresent = vkTokenActive,
+            manualHashCount = manualHashes.size,
+        )
+    }
+    val peerPortValid = !manualPortsEnabled || serverPeerPort in 1..65535
+    val trimmedPeer = peer.trim()
+    val isLocalOrUnspecifiedPeer = trimmedPeer == "0.0.0.0" || trimmedPeer == "127.0.0.1" || trimmedPeer.equals("localhost", ignoreCase = true) || trimmedPeer == "::1"
+    val startBlocker = ConnectionStartPolicy.blocker(
+        linkMode = mrttLinkMode,
+        linkValid = parsedLink != null,
+        peerValid = trimmedPeer.isNotBlank() && !trimmedPeer.contains(":") && !isLocalOrUnspecifiedPeer,
+        peerPortValid = peerPortValid,
+        connectionPasswordSet = connectionPassword.isNotBlank(),
+        connectionPasswordReadable = tunnelAuthSettings.connectionPasswordState != StoredSecretState.Unreadable,
+        hashesReady = hashesReady,
+        profileActive = activeProfileId.isNotBlank(),
+    )
+    val isValid = startBlocker == null
+
+    fun startIntent(source: ConnectionSource, generationId: Long, salt: String): Intent =
+        Intent(context, TunnelService::class.java).apply {
+            action = "START"
+            putExtra("peer", source.peer)
+            putExtra("vk_hashes", source.hashes)
+            putExtra("vk_hashes_from_link", source.hashesFromLink)
+            putExtra("vk_access_token", source.vkAccessToken)
+            putExtra("vk_token_from_link", source.tokenFromLink)
+            putExtra("max_group_id", source.maxGroupId)
+            putExtra("jitsi_room", source.jitsiRoom)
+            putExtra("jitsi_seats", source.jitsiSeats)
+            putExtra("workers_per_hash", workersPerHash)
+            putExtra("port", 0)
+            putExtra("sni", sni)
+            putExtra("connection_password", source.password)
+            putExtra("vk_auth_mode", vkAuthMode)
+            putExtra("captcha_mode", captchaMode)
+            putExtra("captcha_solve_method", captchaSolveMethod)
+            putExtra("fingerprint", activeFingerprint)
+            putExtra("client_ids", activeClientIds)
+            putExtra("obfs_mode", MrttConstants.Tunnel.DEFAULT_OBFS_MODE)
+            putExtra("turn_transport", turnTransport)
+            putExtra("srtp_mode", srtpMode)
+            putExtra("custom_turn_ips", customTurnIps)
+            putExtra("mtu", tunnelMtu)
+            putExtra("generation_id", generationId)
+            putExtra("session_salt", salt)
+        }
+
+    fun startTunnelService() {
+        scope.launch {
+            val source = resolveConnectionSource(settingsStore) ?: run {
+                context.showRaisedToast("Заполните настройки подключения", Toast.LENGTH_SHORT)
+                return@launch
+            }
+            TunnelManager.isLoggingEnabled = settingsStore.loggingEnabled.first()
+            val nextGen = System.currentTimeMillis() / 1000L
+            val salt = newTunnelSessionId()
+            val intent = startIntent(source, nextGen, salt)
+            runCatching { context.startForegroundService(intent) }
+                .onFailure { error ->
+                    TunnelManager.updateLog(
+                        "foreground_request_error",
+                        "Android заблокировал запуск VPN: ${error.message ?: error.javaClass.simpleName}",
+                        99,
+                        true,
+                    )
+                    Toast.makeText(
+                        context,
+                        "Android заблокировал запуск VPN. Проверьте ограничения батареи приложения.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+        }
+    }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (pendingStartAfterVpnPermission) {
+            pendingStartAfterVpnPermission = false
+            if (VpnService.prepare(context) == null) {
+                startTunnelService()
+            } else {
+                context.showRaisedToast("VPN-разрешение не выдано", Toast.LENGTH_SHORT)
+            }
+        }
+    }
+
+    /**
+     * Автоподключение при входе в приложение. Срабатывает один раз за запуск
+     * экрана и только когда пользователь сам включил его в настройках.
+     * Туннель поднимается, если он ещё не работает; если VPN-разрешения нет,
+     * ничего не происходит — приложение просто открывается.
+     */
+    val autoConnectOnLaunch by settingsStore.autoConnectOnLaunch.collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(autoConnectOnLaunch, isValid, tunnelRunning, tunnelStarting) {
+        if (!autoConnectOnLaunch || !isValid) return@LaunchedEffect
+        if (com.mrtt.client.tunnelPowerIsOn(tunnelRunning, tunnelStarting, autoPausedForWifi)) return@LaunchedEffect
+        // Одна попытка на запуск приложения: выключив туннель, пользователь не
+        // получит его обратно при возврате на вкладку «Подключение».
+        if (!TunnelManager.markAutoConnectAttempted()) return@LaunchedEffect
+        if (VpnService.prepare(context) != null) {
+            // Разрешение выдаёт только пользователь: тихо открываем экран и ждём его.
+            TunnelManager.updateLog(
+                "auto_connect_permission",
+                "[ПОДКЛЮЧЕНИЕ] Автоподключение: нужно VPN-разрешение — нажмите «Подключиться»",
+                99,
+                false,
+            )
+            return@LaunchedEffect
+        }
+        TunnelManager.updateLog(
+            "auto_connect_on_launch",
+            "[ПОДКЛЮЧЕНИЕ] Автоподключение при запуске: включено в настройках",
+            99,
+            false,
+        )
+        startTunnelService()
+    }
+
+    fun toggleTunnel() {
+        if (TunnelManager.stopping.value) return
+        if (com.mrtt.client.tunnelPowerIsOn(TunnelManager.running.value, TunnelManager.starting.value, TunnelManager.autoPausedForWifi.value)) {
+            pendingStartAfterVpnPermission = false
+            context.startService(Intent(context, TunnelService::class.java).apply { action = "STOP" })
+            return
+        }
+        if (!isValid) {
+            val blocker = requireNotNull(startBlocker)
+            if (blocker == ConnectionStartBlocker.NoProfile) {
+                context.showRaisedToast("Сначала выберите профиль", Toast.LENGTH_SHORT)
+                onProfileRequired()
+                return
+            }
+            TunnelManager.updateLog(
+                "connection_configuration_${blocker.name}",
+                "[ПОДКЛЮЧЕНИЕ] Запуск не начат: ${blocker.message}",
+                99,
+                true,
+            )
+            if (blocker == ConnectionStartBlocker.StoredSecret) {
+                scope.launch {
+                    val reset = settingsStore.resetUnreadableConnectionPassword()
+                    if (reset) {
+                        context.showRaisedToast(
+                            "Сохранённый пароль сброшен. Введите его заново в разделе «Авторизация».",
+                            Toast.LENGTH_LONG,
+                        )
+                    }
+                    onInvalidConfiguration()
+                }
+                return
+            }
+            onInvalidConfiguration()
+            return
+        }
+        val vpnIntent = VpnService.prepare(context)
+        if (vpnIntent != null) {
+            pendingStartAfterVpnPermission = true
+            vpnPermissionLauncher.launch(vpnIntent)
+        } else {
+            startTunnelService()
+        }
+    }
+
+    val profileRepository = remember { com.mrtt.client.profiles.ProfileRepository(context) }
+    val profiles by profileRepository.profiles.collectAsStateWithLifecycle(initialValue = emptyList())
+    val activeProfile = profiles.firstOrNull { it.id == activeProfileId }
+
+    MrttScreen {
+        Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = 12.dp)) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                TunnelConnectionPanel(
+                    tunnelRunning = tunnelRunning,
+                    tunnelStarting = tunnelStarting,
+                    tunnelStopping = tunnelStopping,
+                    autoPausedForWifi = autoPausedForWifi,
+                    cooldownActive = cooldownActive,
+                    configurationValid = isValid,
+                    transportLabel = when (transportMode) {
+                        MrttConstants.Transport.MODE_MAX -> "MAX"
+                        MrttConstants.Transport.MODE_JITSI -> "Jitsi"
+                        else -> "VK"
+                    },
+                    onToggleTunnel = { toggleTunnel() },
+                )
+            }
+            // К чему подключаемся видно всегда; нажатие открывает список профилей.
+            androidx.compose.material3.Surface(
+                onClick = onProfileRequired,
+                shape = MrttStyleShapes.card,
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth().mrttGlass(MrttStyleShapes.card),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
+                    Text(
+                        text = activeProfile?.name ?: "Профиль не выбран",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = activeProfile?.let { parseMrttLink(it.link) }?.let { "${it.host}:${it.port}" }
+                            ?: "Нажмите, чтобы выбрать",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TunnelConnectionPanel(
+    tunnelRunning: Boolean,
+    tunnelStarting: Boolean,
+    tunnelStopping: Boolean,
+    autoPausedForWifi: Boolean,
+    cooldownActive: Boolean,
+    configurationValid: Boolean,
+    transportLabel: String,
+    onToggleTunnel: () -> Unit,
+) {
+    val isStarting = tunnelStarting && !tunnelRunning && !tunnelStopping
+    val canToggle = !tunnelStopping && (tunnelRunning || isStarting || autoPausedForWifi || !cooldownActive || !configurationValid)
+    val activeVisual = tunnelRunning || isStarting || autoPausedForWifi || tunnelStopping
+    val statusColor = when {
+        autoPausedForWifi -> MaterialTheme.colorScheme.tertiary
+        tunnelStopping -> MaterialTheme.colorScheme.tertiary
+        tunnelRunning -> MaterialTheme.colorScheme.primary
+        isStarting -> MaterialTheme.colorScheme.primary
+        cooldownActive -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val statusText = when {
+        tunnelStopping -> "Остановка"
+        autoPausedForWifi -> "Ожидание. Автопауза при Wi-Fi"
+        tunnelRunning -> "Подключено"
+        isStarting -> "Подключение"
+        cooldownActive -> "Ожидание"
+        else -> "Отключено"
+    }
+
+    run {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val activeWorkers by TunnelManager.activeWorkers.collectAsStateWithLifecycle()
+            val targetWorkers by TunnelManager.targetWorkers.collectAsStateWithLifecycle()
+            val showWorkers = (tunnelRunning || isStarting) && !tunnelStopping && targetWorkers > 0
+            Box(modifier = Modifier.size(270.dp)) {
+                com.mrtt.client.ui.components.MrttOrb(
+                    connected = tunnelRunning || autoPausedForWifi,
+                    connecting = isStarting || tunnelStopping,
+                    enabled = canToggle,
+                    description = when {
+                        tunnelStopping -> "Ожидание отключения VPN"
+                        tunnelRunning || autoPausedForWifi -> "Остановить VPN"
+                        else -> "Включить VPN"
+                    },
+                    onClick = onToggleTunnel,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(if (canToggle || activeVisual) 1f else 0.5f),
+                )
+                // Аниме-девочка живёт рядом с кнопкой в «девичьих» стилях и реагирует на подключение.
+                if (com.mrtt.client.ui.design.mrttHasMascot(com.mrtt.client.ui.design.LocalMrttStyle.current.id)) {
+                    com.mrtt.client.ui.components.MrttMascot(
+                        connected = tunnelRunning || autoPausedForWifi,
+                        connecting = isStarting || tunnelStopping,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(96.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = statusColor,
+                textAlign = TextAlign.Center,
+            )
+
+            TunnelUptimeText(tunnelRunning = tunnelRunning || autoPausedForWifi || tunnelStopping)
+
+            // Живой график скорости: виден, пока туннель работает.
+            if (tunnelRunning && !tunnelStopping) {
+                com.mrtt.client.ui.components.MrttSpeedSparkline(modifier = Modifier.padding(top = 4.dp))
+            }
+
+            if (showWorkers) {
+                Text(
+                    text = transportLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "воркеров: $activeWorkers / $targetWorkers",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // «Экономия батареи» in force: said under the status, where the user looks
+            val batterySaving by BatterySaver.active.collectAsStateWithLifecycle()
+            if (batterySaving && tunnelRunning) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.BatterySaver,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = BatterySaver.BADGE,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TunnelUptimeText(tunnelRunning: Boolean) {
+    val uptimeSeconds by TunnelManager.uptimeSeconds.collectAsStateWithLifecycle()
+    Text(
+        text = formatTunnelUptime(uptimeSeconds),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = if (tunnelRunning) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f)
+        },
+    )
+}
+
+private fun formatTunnelUptime(seconds: Long?): String {
+    val totalSeconds = seconds?.coerceAtLeast(0L) ?: 0L
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val sec = totalSeconds % 60
+    return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, sec)
+}
+
+private fun formatMillis(value: Double): String = when {
+    value < 0.05 -> "wall 0 мс"
+    value < 10.0 -> String.format(Locale.US, "wall %.1f мс", value)
+    else -> String.format(Locale.US, "wall %.0f мс", value)
+}
+
+private fun formatRate(value: Double): String = when {
+    value < 0.05 -> "0/с"
+    value < 10.0 -> String.format(Locale.US, "%.1f/с", value)
+    else -> String.format(Locale.US, "%.0f/с", value)
+}

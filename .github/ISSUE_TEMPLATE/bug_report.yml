@@ -1,0 +1,68 @@
+name: Сообщить об ошибке
+description: Что-то не работает — подключение, приложение, сервер
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Чем точнее детали, тем быстрее найдётся причина.
+  - type: input
+    id: build
+    attributes:
+      label: Номер сборки
+      description: Виден в названии релиза и в настройках приложения
+      placeholder: "например, 43"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Что сломалось
+      options:
+        - Подключение / туннель
+        - VK-аккаунт или хеши
+        - Транспорт MAX
+        - Транспорт Jitsi
+        - Приложения (белый и чёрный список, режимы)
+        - Сервер и деплой
+        - Установка и обновление APK
+        - Другое
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Телефон и версия Android
+      placeholder: "например, Pixel 7, Android 14"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Что вы делали
+      description: По шагам, чтобы можно было повторить
+      placeholder: |
+        1. Открыл вкладку «Подключение»
+        2. Выбрал профиль с сервера
+        3. Нажал «Подключиться»
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидали и что получилось
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи
+      description: Вкладка «Логи» → поделиться. Секреты и пароли замажьте.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Перед отправкой
+      options:
+        - label: Сборка последняя (проверил в Releases)
+        - label: Поискал похожие Issues

@@ -1,0 +1,232 @@
+package com.mrtt.client.ui.servers
+
+import com.mrtt.client.ui.design.MrttStyleShapes
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import com.mrtt.client.ui.components.MrttGlassButton as Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mrtt.client.DeployManager
+import com.mrtt.client.SshHostKeyStore
+import com.mrtt.client.servers.ServerApi
+import com.mrtt.client.servers.ServerApiException
+import com.mrtt.client.servers.ServerControl
+import com.mrtt.client.servers.ServerNotRunningException
+import com.mrtt.client.servers.VpsServer
+import com.mrtt.client.ui.AppSectionCard
+import com.mrtt.client.ui.common.ConfirmDialog
+import com.mrtt.client.ui.HOST_KEY_CHANGED
+import com.mrtt.client.ui.friendlyDeployError
+import com.mrtt.client.ui.components.MrttScreen
+
+private val SECTIONS = listOf("Конфиги", "Группы", "Маршруты", "Прокси", "Настройки", "Статистика", "Логи")
+
+@Composable
+internal fun ServerManageScreen(
+    server: VpsServer,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    onDeploy: () -> Unit,
+    onUninstall: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val context = LocalContext.current.applicationContext
+    val control = remember(server) { ServerControl(context, server) }
+    var section by rememberSaveable(server.id) { mutableIntStateOf(0) }
+    var menu by remember { mutableStateOf(false) }
+    var confirm by rememberSaveable { mutableStateOf<String?>(null) }
+    val jobs by DeployManager.jobs.collectAsStateWithLifecycle()
+    val deployingHere = server.id in jobs
+    // Каждая установка начинает новое поколение: разделы пересоздаются и грузят данные заново.
+    var generation by remember(server.id) { mutableIntStateOf(0) }
+    var wasDeploying by rememberSaveable(server.id) { mutableStateOf(deployingHere) }
+    // Ошибка последней установки на этом сервере; после правки доступа сбрасывается.
+    var deployError by rememberSaveable(server.id) { mutableStateOf("") }
+    LaunchedEffect(deployingHere) {
+        if (wasDeploying && !deployingHere) {
+            deployError = DeployManager.lastResult(server.id).takeIf { it != "success" }.orEmpty()
+            generation++
+        }
+        wasDeploying = deployingHere
+    }
+    var retry by remember(server.id) { mutableIntStateOf(0) }
+    // null: проверяем; "": сервер отвечает; иначе причина, по которой MRTT не отвечает.
+    var reachError by remember(server) { mutableStateOf<String?>(null) }
+    // SSH пускает, но MRTT на сервере нет: вместо «не отвечает» предлагаем установить.
+    var notInstalled by remember(server) { mutableStateOf(false) }
+    LaunchedEffect(control, generation, retry, deployingHere) {
+        if (deployingHere) return@LaunchedEffect
+        reachError = null
+        val result = runCatching { control.settings() }
+        notInstalled = result.exceptionOrNull() is ServerNotRunningException
+        reachError = result.fold(
+            onSuccess = { "" },
+            onFailure = { if (it is ServerApiException) it.message.orEmpty() else friendlyDeployError(it.message) },
+        )
+        if (reachError == "") deployError = ""
+    }
+
+    // Как в Termius: новый ключ принимает сам пользователь. Спрашиваем сразу, ошибкой это не считается.
+    val hostKeyChanged = reachError?.contains(HOST_KEY_CHANGED) == true || deployError.contains(HOST_KEY_CHANGED)
+    LaunchedEffect(hostKeyChanged) { if (hostKeyChanged) confirm = "trust" }
+
+    MrttScreen {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(server.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(server.host, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Действия с сервером") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Изменить доступ") }, onClick = { menu = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Установить / обновить MRTT") }, onClick = { menu = false; confirm = "deploy" })
+                    DropdownMenuItem(text = { Text("Удалить MRTT с сервера") }, onClick = { menu = false; confirm = "uninstall" })
+                    DropdownMenuItem(text = { Text("Убрать из списка") }, onClick = { menu = false; confirm = "delete" })
+                }
+            }
+        }
+        if (deployingHere) {
+            DeployProgressCard(server.id)
+            return@MrttScreen
+        }
+        when {
+            reachError == null -> ServerStatusTile(title = "Подключение к серверу", busy = true)
+            reachError == "" -> Unit
+            hostKeyChanged -> ServerStatusTile(title = "Подключение к серверу") {
+                OutlinedButton(onClick = { confirm = "trust" }, shape = MrttStyleShapes.control, modifier = Modifier.fillMaxWidth()) { Text("Проверить ключ сервера", maxLines = 1) }
+            }
+            deployError.isNotBlank() -> ServerStatusTile(title = "Установка не удалась", text = deployError) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { confirm = "deploy" }, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Ещё раз", maxLines = 1) }
+                    OutlinedButton(onClick = onEdit, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Изменить доступ", maxLines = 1) }
+                }
+            }
+            notInstalled -> ServerStatusTile(title = "MRTT не установлен") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { confirm = "deploy" }, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Установить", maxLines = 1) }
+                    OutlinedButton(onClick = { retry++ }, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Повторить", maxLines = 1) }
+                }
+            }
+            else -> ServerStatusTile(title = "Нет связи с сервером", text = reachError.orEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onEdit, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Изменить доступ", maxLines = 1) }
+                    OutlinedButton(onClick = { retry++ }, shape = MrttStyleShapes.control, modifier = Modifier.weight(1f)) { Text("Повторить", maxLines = 1) }
+                }
+            }
+        }
+        if (reachError != "") return@MrttScreen
+        Text("MRTT установлен", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ScrollableTabRow(
+            selectedTabIndex = section,
+            edgePadding = 0.dp,
+            containerColor = Color.Transparent,
+            divider = {},
+        ) {
+            SECTIONS.forEachIndexed { index, title ->
+                Tab(selected = section == index, onClick = { section = index }, text = { Text(title) })
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = 8.dp)) {
+            key(generation) { when (section) {
+                0 -> SubscriptionsSection(control, server)
+                1 -> GroupsSection(control)
+                2 -> RoutingSection(control)
+                3 -> ProxySection(control)
+                4 -> ServerSettingsSection(control, server)
+                5 -> ServerStatsSection(control)
+                else -> ServerLogsSection(control)
+            } }
+        }
+    }
+
+    when (confirm) {
+        "deploy" -> ConfirmDialog(
+            title = "Установка MRTT",
+            text = "Установить или обновить MRTT на ${server.host}? База подписок сохранится.",
+            confirmText = "Установить",
+            onConfirm = { confirm = null; onDeploy() },
+            onDismiss = { confirm = null },
+        )
+        "uninstall" -> ConfirmDialog(
+            title = "Удаление MRTT",
+            text = "Удалить MRTT с ${server.host}? Все конфиги на этом сервере перестанут работать.",
+            confirmText = "Удалить",
+            onConfirm = { confirm = null; onUninstall() },
+            onDismiss = { confirm = null },
+        )
+        "trust" -> ConfirmDialog(
+            title = "Новый ключ сервера",
+            text = "Ключ SSH у ${server.host} не совпадает с запомненным. Это нормально, если VPS переустанавливали или пересоздавали. Если нет, кто-то может подменять сервер: не доверяйте ключу.",
+            confirmText = "Доверять",
+            onConfirm = {
+                confirm = null
+                SshHostKeyStore.clear(context, server.host, server.sshPort)
+                ServerApi.forget(server.id)
+                deployError = ""
+                retry++
+            },
+            onDismiss = { confirm = null },
+        )
+        "delete" -> ConfirmDialog(
+            title = "Убрать сервер",
+            text = "Убрать ${server.title} из приложения? На самом VPS ничего не изменится.",
+            confirmText = "Убрать",
+            onConfirm = { confirm = null; onDelete() },
+            onDismiss = { confirm = null },
+        )
+    }
+}
+
+@Composable
+private fun ServerStatusTile(
+    title: String,
+    text: String = "",
+    busy: Boolean = false,
+    actions: @Composable () -> Unit = {},
+) {
+    AppSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (busy) CircularProgressIndicator(modifier = Modifier.padding(2.dp), strokeWidth = 2.dp)
+            Text(title, fontWeight = FontWeight.SemiBold)
+        }
+        if (text.isNotBlank()) {
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        actions()
+    }
+}
