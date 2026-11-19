@@ -1,15 +1,3 @@
-//! Игровой режим: те же воркеры, но трафик идёт без переупорядочивания.
-//!
-//! Обычный режим размазывает новые потоки по всем воркерам ради скорости:
-//! игра при этом получает пакеты с разных TURN-аллокаций, и разница в
-//! задержке между ними видна как «пинг скачет», а UDP-поток иногда
-//! переезжает на другой воркер прямо посреди боя. Игровой режим оставляет
-//! каждый поток на одном воркере на всё время жизни потока (sticky),
-//! предпочитает уже прогретый воркер и не гонится за суммой скоростей.
-//!
-//! Режим не меняет ни транспорт, ни шифрование: он только выбирает, в какой
-//! воркер положить пакет, поэтому включается и выключается на ходу командой
-//! из приложения (`GAME_MODE|<вкл>|<порты игр через запятую>`).
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -17,29 +5,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-/// Сколько байт поток может отдать, оставаясь на одном воркере. Выше — это уже
-/// загрузка (браузер, стрим), а не игра: такой поток раскладывается по всем
-/// каналам, иначе он упирается в скорость одной аллокации TURN.
 pub const PIN_MAX_BYTES: u64 = 384 * 1024;
-/// Окно, в котором считается объём: игра стабильно шлёт десятки килобайт в
-/// секунду, загрузка — мегабайты.
 pub const PIN_BYTES_WINDOW: Duration = Duration::from_secs(2);
-/// Сколько поток остаётся «загрузочным» после превышения лимита: без этого
-/// пакеты загрузки то закреплялись бы, то нет, и порядок всё равно ломался.
 const BULK_HOLD: Duration = Duration::from_secs(2);
 
-/// Сколько поток остаётся закреплённым за воркером после последнего пакета.
 const PIN_TTL: Duration = Duration::from_secs(120);
-/// Верхняя граница таблицы закреплений, чтобы режим не рос в памяти.
 const MAX_PINS: usize = 4096;
-/// Поток без пакетов дольше этого срока считается новым при выборе воркера.
 const IDLE_RESET: Duration = Duration::from_secs(20);
 
-/// Состояние игрового режима, общее для диспетчера и канала управления.
 #[derive(Debug, Default)]
 pub struct GameMode {
     enabled: AtomicBool,
-    /// Порты игр из приложения: на них игровой режим включается сам.
     ports: RwLock<Vec<u16>>,
 }
 
@@ -57,8 +33,6 @@ impl GameMode {
         self.enabled.load(Ordering::Acquire)
     }
 
-    /// Список портов игр: пакет на такой порт обслуживается как игровой, даже
-    /// если режим выключен вручную. Пустой список ничего не включает.
     pub fn set_ports(&self, ports: Vec<u16>) {
         if let Ok(mut guard) = self.ports.write() {
             let mut deduped = ports;
@@ -82,7 +56,6 @@ impl GameMode {
             .unwrap_or(false)
     }
 
-    /// Игровой ли поток: режим включён целиком либо адрес назначения — игра.
     pub fn is_game_flow(&self, dst: Option<&SocketAddr>) -> bool {
         if self.is_enabled() {
             return true;
@@ -90,7 +63,6 @@ impl GameMode {
         dst.is_some_and(|addr| self.matches_game_port(addr.port()))
     }
 
-    /// Разбирает команду `GAME_MODE|0|3074,3478` — включает режим и задаёт порты.
     pub fn apply_command(&self, payload: &str) -> (bool, usize) {
         let mut parts = payload.split('|');
         let enabled = parts
@@ -110,7 +82,6 @@ impl GameMode {
     }
 }
 
-/// Порты из строки: запятые, пробелы, диапазоны вида `27000-27100`.
 pub fn parse_ports(input: &str) -> Vec<u16> {
     const MAX_RANGE: u32 = 512;
     let mut ports = Vec::new();
@@ -141,7 +112,6 @@ pub fn parse_ports(input: &str) -> Vec<u16> {
     ports
 }
 
-/// Закрепление потока: воркер, время последнего пакета и объём в текущем окне.
 #[derive(Debug)]
 struct Pin {
     idx: usize,
@@ -162,8 +132,6 @@ impl Pin {
         }
     }
 
-    /// Считает пакет и говорит, можно ли держать поток на одном воркере:
-    /// игра — да, загрузка — нет (её надо разложить по всем каналам).
     fn accepts(&mut self, now: Instant, len: usize) -> bool {
         if self.is_bulk(now) {
             // Поток уже признан загрузкой: пока окно не истечёт, он идёт общим
@@ -192,8 +160,6 @@ impl Pin {
 #[derive(Debug, Default)]
 pub struct GamePins {
     pins: HashMap<String, Pin>,
-    /// Последний выбранный воркер: новый поток идёт туда же, чтобы пакеты
-    /// одного матча не расходились по разным аллокациям.
     preferred: Option<usize>,
     pub pinned_flows: u64,
 }
@@ -203,7 +169,6 @@ impl GamePins {
         Self::default()
     }
 
-    /// Забывает все закрепления (смена списка воркеров).
     pub fn reset(&mut self) {
         self.pins.clear();
         self.preferred = None;
@@ -215,9 +180,6 @@ impl GamePins {
         format!("{}", dst)
     }
 
-    /// Выбирает воркер для пакета: маленький поток игры остаётся на своём
-    /// канале (ровный пинг), крупная загрузка возвращается в общий водопад.
-    /// `None` — решать обычному распределению.
     pub fn select(
         &mut self,
         dst: Option<&SocketAddr>,
@@ -279,7 +241,6 @@ impl GamePins {
     }
 }
 
-/// Игровой ли это адрес по мнению режима: нужен для логов и счётчиков.
 pub fn is_game_destination(dst: Option<&SocketAddr>, mode: &GameMode) -> bool {
     match dst {
         Some(addr) => mode.is_game_flow(Some(addr)) && !matches!(addr.ip(), IpAddr::V4(ip) if ip.is_loopback()),
@@ -287,7 +248,6 @@ pub fn is_game_destination(dst: Option<&SocketAddr>, mode: &GameMode) -> bool {
     }
 }
 
-/// Срок, после которого поток считается новым (для тестов и логов).
 pub const fn idle_reset() -> Duration {
     IDLE_RESET
 }

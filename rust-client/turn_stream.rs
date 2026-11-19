@@ -287,7 +287,6 @@ fn frame_start(bytes: &[u8]) -> Result<Option<FrameKind>> {
     }))
 }
 
-/// Сколько ждём свободный буфер пула, прежде чем признать потерю.
 const PACKET_WAIT_POLL: Duration = Duration::from_millis(1);
 const PACKET_WAIT_PROBES: usize = 250;
 

@@ -11,23 +11,17 @@ use tokio_util::sync::CancellationToken;
 const MAX_CONCURRENT_DNS_QUERIES: usize = 256;
 const MAX_UDP_SESSIONS: usize = 4096;
 
-/// Bounded capacity of the direct-relay → TUN inbound hand-off. Keeps a slow
-/// TUN writer from letting smoltcp/DNS egress grow without limit and starve the
-/// shared packet pool.
 // Очередь пакетов «прямого» (исключённого) трафика на пути в TUN. 128 пакетов
 // ≈ 175 КБ: загрузка с прямого домена на быстром канале упиралась в неё и
 // теряла хвост каждой пачки. 512 пакетов ≈ 700 КБ дают запас на всплеск.
 pub const DIRECT_RELAY_INBOUND_CAPACITY: usize = 512;
 
-/// Порты, на которых живут панель управления, деплой и SSH сервера: если такой
-/// адрес исключён из туннеля, до своего сервера не добраться.
 pub const PROTECTED_PORTS: &[u16] = &[
     crate::MrttPorts::SERVER_PEER_PORT,
     crate::MrttPorts::SERVER_WEB_PORT,
     crate::MrttPorts::SSH_PORT,
 ];
 
-/// Домен выглядит как служебная панель: `panel.…`, `vps.…`, `admin.…`.
 fn domain_is_local_panel(domain: &str) -> bool {
     let host = domain.trim().trim_end_matches('.').to_ascii_lowercase();
     let first = host.split('.').next().unwrap_or("");
@@ -252,11 +246,8 @@ pub struct DirectRelay {
     active_tcp: Arc<RwLock<HashMap<(SocketAddr, SocketAddr), std::time::Instant>>>,
     udp_sessions: Arc<RwLock<HashMap<SocketAddr, Arc<tokio::net::UdpSocket>>>>,
     preresolve_generation: Arc<std::sync::atomic::AtomicU64>,
-    /// Приложения, которым разрешён прямой выход: их потоки идут мимо тоннеля.
     app_direct: Arc<crate::app_direct::AppDirectTable>,
-    /// Состояние приложения (включён/выключен фильтр) — для понятных логов.
     app_direct_ready: Arc<std::sync::atomic::AtomicBool>,
-    /// Наши серверы: даже если их адрес попал в исключения, трафик идёт в туннель.
     protected_ips: std::collections::HashSet<IpAddr>,
     shutdown: CancellationToken,
 }
@@ -566,9 +557,6 @@ impl DirectRelay {
         self.direct_ips.load().contains(ip)
     }
 
-    /// Прямой адрес, который надо вернуть в туннель: свои серверы и то, что
-    /// пользователь добавил в исключения по ошибке (панель управления, SSH).
-    /// Включён ли режим «прямо с фильтром» хотя бы для одного приложения.
     pub fn app_direct_enabled(&self) -> bool {
         self.app_direct_ready.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -577,7 +565,6 @@ impl DirectRelay {
         &self.app_direct
     }
 
-    /// Включает или выключает режим для приложений целиком (из настроек).
     pub fn set_app_direct_enabled(&self, enabled: bool) {
         // Флаг меняется вместе с настройками молча: запись в журнал только
         // повторяла действие пользователя и мешала читать настоящие ошибки.
@@ -599,8 +586,6 @@ impl DirectRelay {
             .any(|domain| domain_is_local_panel(domain))
     }
 
-    /// Решение по потоку приложения в прямом режиме. Неопознанный поток не
-    /// блокируется: спросим у приложения владельца, а пока пустим в тоннель.
     fn app_route_or_ask(
         &self,
         src: SocketAddr,

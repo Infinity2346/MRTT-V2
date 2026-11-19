@@ -24,7 +24,6 @@ import kotlin.math.PI
 import kotlin.math.floor
 import kotlin.math.sin
 
-/** Живой эффект фона и частиц у каждого стиля: у «Аниме» — лепестки сакуры, у «Матрицы» — дождь кода и т. д. */
 enum class MrttEffect { NONE, SAKURA, HEARTS, STARS, SNOW, BUBBLES, FIREFLIES, EMBERS, CODE, NEON, AURORA }
 
 fun mrttEffectFor(styleId: String): MrttEffect = when (styleId) {
@@ -41,10 +40,8 @@ fun mrttEffectFor(styleId: String): MrttEffect = when (styleId) {
     else -> MrttEffect.NONE
 }
 
-/** Стили, у которых на главном экране живёт аниме-девочка. */
 fun mrttHasMascot(styleId: String): Boolean = styleId in setOf("anime", "candy", "rosegold", "lavender")
 
-/** Детерминированный «случайный» параметр частицы: i — номер, k — какой параметр. */
 internal fun mrttRnd(i: Int, k: Int): Float {
     val v = sin((i * 127.1 + k * 311.7)) * 43758.5453
     return (v - floor(v)).toFloat()
@@ -79,7 +76,6 @@ internal fun DrawScope.drawPetal(c: Offset, s: Float, deg: Float, color: Color) 
     }
 }
 
-/** Одна частица по типу эффекта — её же берут кнопки и главный шар. */
 internal fun DrawScope.drawParticle(effect: MrttEffect, c: Offset, s: Float, deg: Float, color: Color) {
     when (effect) {
         MrttEffect.SAKURA -> drawPetal(c, s, deg, color)
@@ -103,7 +99,6 @@ internal fun DrawScope.drawParticle(effect: MrttEffect, c: Offset, s: Float, deg
     }
 }
 
-/** Общие часы анимации: меняют только перерисовку, не пересборку. */
 @Composable
 internal fun rememberMrttClock(): () -> Float {
     var clock by remember { mutableLongStateOf(0L) }
@@ -116,7 +111,6 @@ internal fun rememberMrttClock(): () -> Float {
     return { clock / 1000f }
 }
 
-/** Фоновая анимация текущего стиля. Рисуется под интерфейсом, поверх цветных пятен. */
 @Composable
 fun MrttBackdropEffect(effect: MrttEffect, modifier: Modifier = Modifier) {
     if (effect == MrttEffect.NONE) return

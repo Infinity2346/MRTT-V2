@@ -83,39 +83,30 @@ pub struct PasswordEntry {
     pub sub_uuid: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workers: Option<u32>,
-    /// `None` — одно устройство (по умолчанию), `Some(0)` — без лимита.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_devices: Option<u32>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub devices: BTreeMap<String, BoundDevice>,
-    /// Транспорт по умолчанию для профиля из ссылки: "vk", "jitsi" или пусто (как решит клиент).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub transport: String,
-    /// В ссылке нет комнаты Jitsi: клиент задаёт её сам.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub link_room_off: bool,
-    /// Выход этого конфига: пусто — как на сервере, `direct` — напрямую, иначе id выхода.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub exit: String,
 }
 
-/// Другой VPS, через который можно выпускать клиентов: подключение к нему настраивает приложение.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExitLink {
     pub id: String,
     pub name: String,
     pub host: String,
-    /// Таблица маршрутов на этом сервере, ведущая в туннель.
     pub table: u32,
-    /// Конфиг на сервере-выходе, под которым подключается этот сервер.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub remote_password: String,
 }
 
-/// Значение приоритета, при котором настройка конфига важнее настройки сервера.
 pub const EXIT_PRIORITY_CONFIG: &str = "config";
 
-/// Устройство, привязанное к ссылке (ключ — device_id клиента, `legacy` для клиентов без device_id).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BoundDevice {
@@ -130,7 +121,6 @@ pub const LEGACY_DEVICE_ID: &str = "legacy";
 pub const MAX_DEVICES_LIMIT: u32 = 1000;
 const DEVICE_LAST_SEEN_PERSIST_SECS: i64 = 600;
 
-/// Сколько устройств допускает ссылка; `None` — без лимита.
 pub fn device_limit(max_devices: Option<u32>) -> Option<usize> {
     match max_devices {
         None => Some(1),
@@ -153,7 +143,6 @@ pub struct LocalProxyProfile {
 }
 
 impl Database {
-    /// Таблица выхода для конфига с выбором `own`; None — напрямую.
     fn exit_table(&self, own: &str) -> Option<u32> {
         let chosen = if self.exit_priority == EXIT_PRIORITY_CONFIG && !own.is_empty() {
             own
@@ -163,7 +152,6 @@ impl Database {
         self.exits.iter().find(|exit| exit.id == chosen).map(|exit| exit.table)
     }
 
-    /// Маршруты всех адресов клиентов: основной адрес конфига и адреса его устройств.
     pub fn exit_routes(&self) -> std::collections::BTreeSet<(String, u32)> {
         let mut routes = std::collections::BTreeSet::new();
         if let Some(table) = self.exit_table(&self.main_exit) {
@@ -325,7 +313,6 @@ pub struct Database {
     pub main_workers: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_max_devices: Option<u32>,
-    /// Транспорт в ссылке владельца: "vk", "jitsi" или пусто.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub main_transport: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -336,7 +323,6 @@ pub struct Database {
     pub exits: Vec<ExitLink>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub default_exit: String,
-    /// `config`: настройка конфига важнее серверной; иначе все идут через серверную.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub exit_priority: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -351,7 +337,6 @@ pub struct Database {
     pub groups: BTreeMap<String, ClientGroup>,
     #[serde(default)]
     pub routing_rules: BTreeMap<String, RoutingRule>,
-    /// Jitsi room `host/room` the server sits in; empty keeps the Jitsi transport off.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub jitsi_room: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -907,14 +892,10 @@ pub fn resolve_session_ip(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAdmission {
     pub ip: String,
-    /// Привязки изменились — снимок БД нужно сохранить.
     pub changed: bool,
-    /// Привязка клиента без device_id вытеснена новым устройством — его сессии надо сбросить.
     pub evicted_legacy: bool,
 }
 
-/// Привязать устройство к ссылке (или узнать уже привязанное) и выдать ему IP туннеля.
-/// `slot` — `None` для главного пароля. Первое устройство получает основной IP ссылки.
 pub fn admit_device(
     db: &mut Database,
     slot: Option<&str>,
@@ -1009,7 +990,6 @@ fn devices_mut<'a>(
     }
 }
 
-/// Отвязать устройство (или все, если `device_id` пуст). Возвращает id отвязанных.
 pub fn unbind_devices(db: &mut Database, password: &str, device_id: &str) -> Vec<String> {
     let devices = if !db.main_password.is_empty() && secret_eq(password, &db.main_password) {
         &mut db.main_devices

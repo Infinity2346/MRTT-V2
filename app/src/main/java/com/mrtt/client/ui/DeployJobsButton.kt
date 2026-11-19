@@ -29,7 +29,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mrtt.client.DeployManager
 import com.mrtt.client.ui.common.MrttFormDialog
 
-/** Кнопка в шапке, пока идёт установка или удаление: в окне статус каждого сервера и отмена. */
 @Composable
 internal fun DeployJobsButton() {
     val jobs by DeployManager.jobs.collectAsStateWithLifecycle()

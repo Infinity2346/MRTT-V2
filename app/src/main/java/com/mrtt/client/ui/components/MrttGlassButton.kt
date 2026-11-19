@@ -28,7 +28,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import com.mrtt.client.ui.design.mrttGlass
 
-/** Главная кнопка: тонировка и ободок вместо сплошной заливки. Подпись повторяет Material `Button`. */
 @Composable
 fun MrttGlassButton(
     onClick: () -> Unit,

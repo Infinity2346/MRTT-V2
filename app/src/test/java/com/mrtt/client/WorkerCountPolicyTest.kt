@@ -10,6 +10,14 @@ import org.junit.Test
 class WorkerCountPolicyTest {
 
     @Test
+    fun requestedWorkerPreferenceIsNotCappedByTransportLimits() {
+        assertEquals(100, WorkerCountPolicy.requested(100))
+        assertEquals(MrttConstants.Tunnel.DEFAULT_WORKERS, WorkerCountPolicy.requested(null))
+        assertEquals(30, WorkerCountPolicy.maximumForHashes(1))
+        assertEquals(100, WorkerCountPolicy.requested(100))
+    }
+
+    @Test
     fun everySupportedTotalRemainsAnExactMultipleOfTen() {
         val supported = (1..MrttConstants.Tunnel.MAX_WORKERS / MrttConstants.Tunnel.WORKERS_PER_GROUP)
             .map { it * MrttConstants.Tunnel.WORKERS_PER_GROUP }
@@ -31,11 +39,6 @@ class WorkerCountPolicyTest {
         assertEquals(100, WorkerCountPolicy.maximumForHashes(6))
     }
 
-    /**
-     * MAX и Jitsi идут без VK-хешей. Раньше ползунок считал их лимит по хешам и
-     * упирался в 27 при общем потолке 100 — из-за этого в MAX нельзя было
-     * поставить больше 27 потоков.
-     */
     @Test
     fun maxAndJitsiAreNotCappedByVkHashes() {
         assertEquals(

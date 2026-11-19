@@ -33,12 +33,7 @@ internal data class VkAuthPayload(
     val token: String,
     val userId: String,
     val expiresIn: Long,
-    /** Куки сессии VK: это и есть привязка, токен из них получается заново при каждом подключении. */
     val cookies: String = "",
-    /**
-     * Вход по протоколу VK ID (через приложение ВК): привязкой становится пара
-     * токенов, а не куки — их приложение ВК нам не отдаёт.
-     */
     val refreshToken: String = "",
 )
 
@@ -53,7 +48,6 @@ internal object VkAuthWebViewManager {
         mainHandler.post { clearVkSessionCookiesNow() }
     }
 
-    /** То же, но сразу: вызывать с главного потока до открытия окна входа. */
     fun clearVkSessionCookiesNow() {
         runCatching {
             val manager = CookieManager.getInstance()
@@ -73,10 +67,6 @@ internal object VkAuthWebViewManager {
         }
     }
 
-    /**
-     * Приложение вернулось на экран: если это был возврат из приложения ВК,
-     * активное окно входа сейчас же проверит куки сессии.
-     */
     fun onAppReturned() {
         mainHandler.post {
             val session = VkAuthSession.active ?: return@post
@@ -124,18 +114,9 @@ internal object VkAuthWebViewManager {
         return view
     }
 
-    /**
-     * Мост для официальной кнопки ВК «Войти через приложение».
-     *
-     * Кнопка открывает приложение по ссылке `vk://…` из JavaScript (`window.open`
-     * или `location.href`). WebView такие ссылки не отдаёт системе сам: он пытается
-     * загрузить их как страницу, получает ошибку и молча останавливается. Мост
-     * принимает только внешние схемы и передаёт их открывателю — см. [handleExternalTarget].
-     */
     internal class VkExternalLinkBridge(
         private val onExternalLink: (Uri) -> Unit,
         private val onReturn: (String) -> Unit = {},
-        /** Обычная страница входа (вход прошёл в этом же окне) — тоже событие. */
         private val onPage: (String) -> Unit = {},
     ) {
         @JavascriptInterface
@@ -151,7 +132,6 @@ internal object VkAuthWebViewManager {
             onExternalLink(uri)
         }
 
-        /** ВК вернул человека из приложения ссылкой на свою схему. */
         @JavascriptInterface
         fun returned(url: String) {
             if (url.isBlank()) return
@@ -240,10 +220,8 @@ internal class VkAuthSession(
     private val onToken: (VkAuthPayload) -> Unit,
     private val onError: (String) -> Unit,
     private val onPhaseChange: (VkAuthPhase) -> Unit = {},
-    /** Результат попытки «войти через приложение»: человеку нужно объяснить, что произошло. */
     internal val onAppLoginNote: (String) -> Unit = {},
 ) {
-    /** Строка о возврате из приложения ВК для уже открытого окна. */
     internal var onNote: ((String) -> Unit)? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -257,19 +235,12 @@ internal class VkAuthSession(
     private var phase = VkAuthPhase.LOGIN
     private var paused = false
     private var pendingAuthorizationRetry = false
-    /** Человек нажал «Войти через приложение»: ждём возврата с готовой сессией. */
     private var externalLoginRequested = false
-    /** Сколько раз уже перепроверяли куки после возврата из приложения ВК. */
     private var externalLoginPolls = 0
-    /** Сколько раз пробовали обменять куки на токен: вторая попытка часто удаётся. */
     private var tokenAttempts = 0
-    /** Параметры текущего входа по протоколу VK ID (PKCE). */
     private var pkce = VkIdOAuth.newPkce()
-    /** Идёт обмен кода VK ID на токен: второй обмен того же кода ВК отклонит. */
     private var exchangingCode = false
-    /** Страница VK ID уже отказала: дальше работаем на обычной странице входа ВК. */
     private var vkIdPageFellBack = false
-    /** Сейчас открыта страница VK ID (а не обычная страница входа ВК). */
     private var vkIdAttempt = false
 
     fun attach(view: WebView) {
@@ -368,11 +339,6 @@ internal class VkAuthSession(
                 return true
             }
 
-            /**
-             * Окно, которое открывает страница ВК. Внутри него бывает и приложение
-             * (`vk://`), и обычная страница проверки: первое отдаём системе, второе
-             * грузим в этом же WebView, чтобы вход не прерывался.
-             */
             override fun onCreateWindow(
                 v: WebView,
                 isDialog: Boolean,
@@ -454,7 +420,6 @@ internal class VkAuthSession(
         scheduleMonitor()
     }
 
-    /** Закрывает всплывающее окно: дальше его адрес живёт в основном WebView. */
     private fun destroyPopup(view: WebView) {
         // Уничтожаем после текущего вызова: onPageStarted приходит из самого WebView.
         mainHandler.post {
@@ -466,10 +431,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * Открывает адрес из всплывающего окна: внешнюю схему — приложению,
-     * обычную страницу — в основном WebView.
-     */
     private fun openInMainWindow(uri: Uri): Boolean {
         if (handleExternalTarget(uri)) return true
         val url = uri.toString()
@@ -480,32 +441,16 @@ internal class VkAuthSession(
         return true
     }
 
-    /**
-     * Учит страницу отдавать внешние ссылки приложению: перехватывает `window.open`
-     * и клики по ссылкам с чужой схемой. Нужно для официальной кнопки ВК
-     * «Войти через приложение»: она открывает приложение из JavaScript, а WebView
-     * такие переходы молча игнорирует.
-     */
     private fun installExternalLinkShim(view: WebView) {
         runCatching { view.evaluateJavascript(EXTERNAL_LINK_SHIM_JS, null) }
     }
 
-    /**
-     * Приложения, которые открываются по ссылке: VK-клиент, браузер и любая
-     * сторонняя программа. Внутри WebView такие ссылки не работают.
-     */
     private fun isExternalScheme(scheme: String): Boolean = VkAuthSecurity.isExternalScheme(scheme)
 
-    /** Имя JS-моста, через который страница отдаёт внешние ссылки. */
     private val vkBridgeName = "MRTTVk"
 
-    /** Служебная схема для нажатий, которые нельзя отследить переходом. */
     private val mrttScheme = "mrtt"
 
-    /**
-     * Вешает на WebView JS-мост: без него официальная кнопка ВК «Войти через
-     * приложение» жмётся, но ничего не открывает.
-     */
     private fun installExternalLinkHandlers(view: WebView) {
         runCatching {
             view.addJavascriptInterface(
@@ -519,14 +464,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * Пытается выполнить внешний переход: `intent://…#Intent;…`, свой протокол
-     * приложения (`vk://`, `vkauth://`) или обычную ссылку на другое приложение.
-     *
-     * Возвращает `true`, если ссылку забрали себе: тогда WebView её не грузит.
-     * Любой исход объясняется строкой в окне — молча ничего не делать нельзя,
-     * иначе кнопка «войти через приложение» выглядит сломанной.
-     */
     private fun handleExternalTarget(uri: Uri): Boolean {
         // Из JS-моста вызов приходит не в главном потоке: и startActivity,
         // и работы с WebView должны идти в main.
@@ -595,13 +532,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * Возврат из приложения ВК: `vk7793118://vk.ru/blank.html?code=…&device_id=…&state=…`.
-     *
-     * Это официальный путь VK ID: приложение ВК не отдаёт нам свои куки, зато
-     * отдаёт код подтверждения. Код обмениваем на токены сами (PKCE), и вход
-     * доводится до конца — человеку больше не нужно вводить пароль в MRTT.
-     */
     private fun handleAppReturnByUrl(url: String) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { handleAppReturnByUrl(url) }
@@ -621,14 +551,6 @@ internal class VkAuthSession(
         handleAppReturn(view)
     }
 
-    /**
-     * Проверяет, что страница входа VK ID действительно открылась.
-     *
-     * `id.vk.ru/authorize` умеет отвечать `{"error":"not found"}` — например,
-     * если приложение не знает такой `redirect_uri`. Тогда окно остаётся с
-     * голым JSON, и нажать в нём нечего. В этом случае один раз переходим на
-     * обычную страницу входа ВК: вход оттуда тоже доводится до токена.
-     */
     private fun detectVkIdPageRejected(view: WebView, url: String) {
         if (finished || vkIdPageFellBack || !vkIdAttempt) return
         if (!url.contains("id.vk.", ignoreCase = true)) return
@@ -654,11 +576,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * JS-мост сообщил об обычном переходе (в том числе `location.href` внутри
-     * iframe, который WebView иногда не показывает как загрузку страницы).
-     * Ведём WebView туда же — так вход не может «зависнуть» на полпути.
-     */
     private fun handlePageFromBridge(url: String) {
         mainHandler.post {
             if (finished) return@post
@@ -678,7 +595,6 @@ internal class VkAuthSession(
         }
     }
 
-    /** Обмен кода VK ID на токены: единственный путь, который реально работает из приложения ВК. */
     private fun handleVkIdCallback(view: WebView, callback: VkIdOAuth.Callback) {
         if (finished || exchangingCode) return
         if (callback.error.isNotBlank()) {
@@ -779,13 +695,6 @@ internal class VkAuthSession(
         scheduleMonitor()
     }
 
-    /**
-     * Открывает приложение ВК и запоминает, что надо ждать возврата с сессией.
-     *
-     * Вызывается, когда человек нажал официальную кнопку ВК «Войти через
-     * приложение»: страница открывает приложение из вложенного фрейма, и
-     * переход по `vk://` до WebView не доходит — открываем сами.
-     */
     private fun openVkAppAndWait(context: Context): String {
         externalLoginRequested = true
         externalLoginPolls = 0
@@ -854,7 +763,6 @@ internal class VkAuthSession(
         }
     }
 
-    /** Установлено ли настоящее приложение ВК. */
     private fun vkAppInstalled(context: Context): Boolean = runCatching {
         context.packageManager.getApplicationInfo(VK_APP_PACKAGE, 0)
         true
@@ -874,10 +782,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * Вход мог случиться в приложении VK: WebView ничего не грузил, но куки
-     * сессии в CookieManager уже есть. Проверяем это при возврате в приложение.
-     */
     fun resumeFromExternalLogin(): String? {
         if (finished) return null
         if (phase != VkAuthPhase.LOGIN) return null
@@ -958,11 +862,6 @@ internal class VkAuthSession(
         }
     }
 
-    /**
-     * Вход случился, но токен не выдан. Возвращаемся в окно входа и объясняем
-     * причину по-человечески: приложение ВК не делится своим входом, поэтому
-     * войти нужно прямо здесь, логином и паролем (или кодом из SMS).
-     */
     private fun returnToLoginAfterTokenFailure(view: WebView, reason: String) {
         tokenAttempts = 0
         phase = VkAuthPhase.LOGIN
@@ -988,11 +887,6 @@ internal class VkAuthSession(
         scheduleMonitor()
     }
 
-    /**
-     * Повтор входа из окна: человек нажал «Войти заново» после ошибки.
-     * Возвращает окно в рабочее состояние — без этого единственным выходом
-     * было закрыть и открыть окно, и ошибка повторялась.
-     */
     fun retryLogin(): Boolean {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { retryLogin() }
@@ -1019,7 +913,6 @@ internal class VkAuthSession(
         return true
     }
 
-    /** Гасит именно сессионные куки ВК: служебные трогать незачем. */
     private fun clearSessionCookiesNow() {
         val manager = CookieManager.getInstance()
         runCatching {
@@ -1052,11 +945,6 @@ internal class VkAuthSession(
         )
     }
 
-    /**
-     * Страница входа. Мобильная версия открывается сразу формой логина и не
-     * показывает витрину с кнопкой «Войти через приложение», которая всё равно
-     * не может передать нам сессию приложения ВК.
-     */
     private fun loadLoginPage(view: WebView) {
         // Обычная страница ВК: она открывается всегда и даёт вход логином,
         // а токен из неё получается по кукам. Страницу VK ID открываем только
@@ -1067,12 +955,6 @@ internal class VkAuthSession(
         view.loadUrl(MrttConstants.VkAutoHash.VK_MOBILE_LOGIN_URL)
     }
 
-    /**
-     * Вход через приложение ВК: пробуем протокол VK ID (PKCE) и сразу открываем
-     * приложение ВК на нашем запросе подтверждения.
-     *
-     * Возвращает строку для окна: человек должен понимать, что произошло.
-     */
     fun startVkIdLogin(context: Context): String {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { startVkIdLogin(context) }
@@ -1094,13 +976,6 @@ internal class VkAuthSession(
 
     private fun isVkLoggedIn(): Boolean = hasSessionCookie()
 
-    /**
-     * Куки сессии после входа в приложении VK.
-     *
-     * Вход «через приложение» проходит в другом процессе, и его куки лежат в
-     * общем CookieManager: если WebView уже пустил на свою страницу ВК, сессия
-     * видна и здесь. На этом и держится подхват входа после возврата в MRTT.
-     */
     fun hasSessionCookie(): Boolean {
         // Только настоящие сессионные куки (`remixsid` и родственные). Раньше
         // здесь хватало любой куки длиннее 24 символов, и после возврата из
@@ -1109,7 +984,6 @@ internal class VkAuthSession(
         return VkAuthSecurity.hasVkSessionCookie(collectVkCookieHeader())
     }
 
-    /** Все куки сессии ВК одной строкой: их обмениваем на токен. */
     fun collectVkCookieHeader(): String {
         val manager = CookieManager.getInstance()
         val builder = StringBuilder()
@@ -1261,7 +1135,6 @@ internal class VkAuthSession(
     }
 
     companion object {
-        /** Перехват `window.open` и кликов по ссылкам с чужой схемой. */
         private val EXTERNAL_LINK_SHIM_JS = """
             (function() {
               if (window.__mrttExternalShim) return;
@@ -1323,29 +1196,20 @@ internal class VkAuthSession(
             })();
         """.trimIndent()
 
-        /** Открытое сейчас окно входа: возврат из приложения ВК находит его сам. */
         internal var active: VkAuthSession? = null
 
-        /** Как часто и как долго ждём куки сессии после возврата из приложения ВК. */
         private const val EXTERNAL_LOGIN_POLL_MS = 700L
         private const val EXTERNAL_LOGIN_MAX_POLLS = 20
 
-        /** Обмен кук на токен: одна повторная попытка и пауза между ними. */
         private const val TOKEN_ATTEMPTS_MAX = 2
         private const val TOKEN_RETRY_DELAY_MS = 900L
 
-        /**
-         * Честная строка для случая «нажали “Войти через приложение”, вернулись,
-         * а сессии в MRTT нет»: приложение ВК хранит вход у себя.
-         */
         private const val APP_LOGIN_NO_SESSION_NOTE =
             "Приложение ВК не передало вход в MRTT — так бывает всегда: " +
                 "войдите в этом окне логином и паролем" 
 
-        /** Настоящее приложение ВК. Других «VK-клиентов» не открываем: это подделки. */
         private const val VK_APP_PACKAGE = "com.vkontakte.android"
 
-        /** Браузеры, которыми открываем страницу входа, если приложения ВК нет. */
         private val BROWSER_PACKAGES = listOf(
             "com.android.chrome",
             "org.mozilla.firefox",

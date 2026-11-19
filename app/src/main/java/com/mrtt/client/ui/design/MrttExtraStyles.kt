@@ -1,9 +1,5 @@
 package com.mrtt.client.ui.design
 
-/**
- * Дополнительные стили. Схемы собирает [mrttScheme]: подписи на кнопках и
- * контейнерах подбираются по контрасту сами, поэтому текст всегда читается.
- */
 internal val MrttExtraStyles: List<MrttStyle> = listOf(
     MrttStyle(
         id = "midnight",

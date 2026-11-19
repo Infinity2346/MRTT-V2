@@ -7,21 +7,7 @@ import android.util.Log
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
-/**
- * Кто владелец сетевого потока.
- *
- * В VPN видно только IP-пакеты: имени приложения в них нет. Поэтому, когда
- * клиент встречает новый поток, а в настройках включён прямой режим для
- * приложений, он спрашивает приложение-владельца через
- * `ConnectivityManager.getConnectionOwnerUid` (доступно активному VpnService)
- * и присылает ответ командой `APP_DIRECT_FLOW|…`.
- *
- * Если владельца узнать нельзя (Android 9 и ниже, приложение привязано к
- * интерфейсу), поток идёт в туннель как обычно: медленнее, но никогда не
- * рвётся и не утекает в обход.
- */
 object FlowOwnerResolver {
-    /** Сколько раз спрашивать один и тот же поток, прежде чем сдаться. */
     private const val MAX_ATTEMPTS = 12
 
     private val attempts = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -38,13 +24,8 @@ object FlowOwnerResolver {
             .mapNotNull { it.trim().takeIf(String::isNotEmpty) }
             .toSet()
 
-    /** Включён ли прямой режим хотя бы для одного приложения. */
     fun isEnabled(): Boolean = directPackages.isNotEmpty() || rawPackages.isNotEmpty()
 
-    /**
-     * Ответ на вопрос клиента: `null`, если владельца опознать не удалось и
-     * повторять вопрос уже бессмысленно.
-     */
     fun resolve(
         context: Context,
         src: String,

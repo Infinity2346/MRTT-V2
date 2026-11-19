@@ -23,10 +23,6 @@ import com.mrtt.client.ui.appSectionCardBorderColor
 import com.mrtt.client.ui.appSectionCardColor
 import com.mrtt.client.ui.design.MrttSizes
 
-/**
- * Пояснение к режиму «Скрывать порты и трафик»: что именно скрывается от
- * сторонних приложений и чего этот режим не делает.
- */
 @Composable
 internal fun HideFingerprintInfoDialog(onDismiss: () -> Unit) {
     Dialog(

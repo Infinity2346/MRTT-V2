@@ -67,7 +67,6 @@ class SettingsStore(context: Context) {
         private val ACTIVE_PROFILE = intPreferencesKey("active_profile")
         private val SHOW_SYSTEM_APPS = booleanPreferencesKey("show_system_apps")
         private val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
-        /** Скрывать порты и трафик туннеля от сторонних приложений. */
         private val HIDE_TUNNEL_FINGERPRINT = booleanPreferencesKey("hide_tunnel_fingerprint")
         private val INFO_ACTIONS_EXPANDED = booleanPreferencesKey("info_actions_expanded")
         private val INFO_PROJECT_EXPANDED = booleanPreferencesKey("info_project_expanded")
@@ -115,7 +114,6 @@ class SettingsStore(context: Context) {
         private val EXCLUDED_APPS = stringPreferencesKey("excluded_apps")
         private val WHITELIST_APPS = stringPreferencesKey("whitelist_apps")
 
-        /** Приложения, которым разрешён прямой выход: «свой интернет», но с фильтром. */
         private val APP_DIRECT_FILTERED = stringPreferencesKey("app_direct_filtered")
         private val APP_DIRECT_RAW = stringPreferencesKey("app_direct_raw")
 
@@ -146,14 +144,12 @@ class SettingsStore(context: Context) {
         private val VK_HASH_MODE = stringPreferencesKey("vk_hash_mode")
         private val VK_ACCESS_TOKEN = stringPreferencesKey("vk_access_token")
         private const val VK_SESSION_PREFIX = "vkweb:"
-        /** Вход через приложение ВК (VK ID): храним не куки, а сам токен. */
         private const val VK_ID_TOKEN_PREFIX = "vkid:"
         private val VK_ID_REFRESH_TOKEN = stringPreferencesKey("vk_id_refresh_token")
         private val VK_ID_REFRESH_TOKEN_ENCRYPTED = stringPreferencesKey("vk_id_refresh_token_encrypted")
         private val VK_ACCESS_TOKEN_ENCRYPTED = stringPreferencesKey("vk_access_token_encrypted")
         private val VK_ACCESS_TOKEN_USER_ID = stringPreferencesKey("vk_access_token_user_id")
         private val MAX_GROUP_ID = stringPreferencesKey("max_group_id")
-        /** deviceId страницы web.max.ru: MAX привязывает токен к устройству. */
         private val MAX_DEVICE_ID = stringPreferencesKey("max_device_id")
         private val TRANSPORT_MODE = stringPreferencesKey("transport_mode")
         private val JITSI_ROOM_OVERRIDE = stringPreferencesKey("jitsi_room_override")
@@ -174,7 +170,6 @@ class SettingsStore(context: Context) {
             booleanPreferencesKey("battery_optimization_prompt_handled")
         private val AUTO_PAUSE_ON_WIFI = booleanPreferencesKey("auto_pause_on_wifi")
 
-        /** Включать туннель при открытии приложения, если пользователь сам его выключил. */
         private val AUTO_CONNECT_ON_LAUNCH = booleanPreferencesKey("auto_connect_on_launch")
         private val BATTERY_SAVER_MODE = stringPreferencesKey("battery_saver_mode")
         private val BATTERY_SAVER_PERCENT = intPreferencesKey("battery_saver_percent")
@@ -183,24 +178,17 @@ class SettingsStore(context: Context) {
         private val EXCLUDE_RU_ZONES_ENABLED = booleanPreferencesKey("exclude_ru_zones_enabled")
         private val TEMPLATE_DOMAINS_ENABLED = booleanPreferencesKey("template_domains_enabled")
         private val ADBLOCK_ENABLED = booleanPreferencesKey("adblock_enabled")
-        /** Свои домены Adblock: по одному в строке, `@@домен` — исключение. */
         private val ADBLOCK_DOMAINS = stringPreferencesKey("adblock_domains")
-        /** Подписки на списки трекеров: JSON-массив адресов. */
         private val ADBLOCK_SUBSCRIPTIONS = stringPreferencesKey("adblock_subscriptions")
-        /** Включённые категории правил (geosite-category-ru@ads и т.п.), через запятую. */
         private val ADBLOCK_CATEGORIES = stringPreferencesKey("adblock_categories")
-        /** Российские сервисы (geosite-category-ru) идут напрямую, мимо туннеля. */
         private val GEOSITE_RU_ENABLED = booleanPreferencesKey("geosite_ru_enabled")
-        /** Скрытие через root: закрыть localhost чужим приложениям и спрятать процесс. */
         internal val PORT_HIDE_ROOT = booleanPreferencesKey("port_hide_root")
-        /** Пакеты, которым закрыт localhost в режиме скрытия через root. */
         internal val PORT_HIDE_PACKAGES = stringPreferencesKey("port_hide_packages")
         private val GAME_MODE_ENABLED = booleanPreferencesKey("game_mode_enabled")
         private val GAME_MODE_AUTO = booleanPreferencesKey("game_mode_auto")
         private val GAME_PACKAGES = stringPreferencesKey("game_packages")
         private val GAME_EXTRA_PORTS = stringPreferencesKey("game_extra_ports")
 
-        /** Игры, которые пользователь явно вернул в туннель. */
         private val GAME_TUNNEL_PACKAGES = stringPreferencesKey("game_tunnel_packages")
         private val GAME_AUTO_ACTIVE = booleanPreferencesKey("game_auto_active")
         private val OWN_SERVER_IPS = stringPreferencesKey("own_server_ips")
@@ -247,14 +235,12 @@ class SettingsStore(context: Context) {
         @Volatile
         internal var cachedVkSession: String? = null
 
-        /** Токен входа через приложение ВК (VK ID): тоже кэш, чтобы не ходить в DataStore. */
         @Volatile
         internal var cachedVkIdToken: String? = null
 
         @Volatile
         internal var cachedObfsMode: String? = null
 
-        /** Скрытие портов и трафика: нужно службе туннеля без suspend-вызова. */
         @Volatile
         internal var cachedHideTunnelFingerprint: Boolean = false
 
@@ -288,11 +274,9 @@ class SettingsStore(context: Context) {
         @Volatile
         internal var cachedWhitelistApps: String? = null
 
-        /** Приложения в режиме «напрямую с фильтром рекламы». */
         @Volatile
         internal var cachedAppDirectFiltered: String = ""
 
-        /** Приложения, полностью исключённые из VPN (напрямую и без фильтра). */
         @Volatile
         internal var cachedAppDirectRaw: String = ""
 
@@ -338,11 +322,9 @@ class SettingsStore(context: Context) {
         @Volatile
         internal var cachedGameModeAuto: Boolean? = null
 
-        /** Адреса своих серверов, доступные без suspend-вызова (кэш из DataStore). */
         @Volatile
         internal var cachedOwnServerIps: String = ""
 
-        /** Токен VK-аккаунта сервера из активной ссылки: нужен без suspend-вызова. */
         @Volatile
         internal var cachedLinkVkToken: String = ""
 
@@ -378,10 +360,6 @@ class SettingsStore(context: Context) {
     val showSystemApps: Flow<Boolean> = dataStore.data.map { it[SHOW_SYSTEM_APPS] ?: false }
     val loggingEnabled: Flow<Boolean> = dataStore.data.map { it[LOGGING_ENABLED] ?: true }
 
-    /**
-     * Скрытие портов и трафика от сторонних приложений. По умолчанию выключено:
-     * маскировка стоит лишних байт в каждом пакете.
-     */
     val hideTunnelFingerprint: Flow<Boolean> = dataStore.data.map { it[HIDE_TUNNEL_FINGERPRINT] ?: false }
     val infoActionsExpanded: Flow<Boolean> = dataStore.data.map { it[INFO_ACTIONS_EXPANDED] ?: false }
     val infoProjectExpanded: Flow<Boolean> = dataStore.data.map { it[INFO_PROJECT_EXPANDED] ?: false }
@@ -389,11 +367,6 @@ class SettingsStore(context: Context) {
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(MRTT_LINK, profile)] ?: ""
     }
-    /**
-     * Подключение по ссылке выбранного профиля. По умолчанию включено (профиль — это
-     * и есть ссылка), но значение читается из настроек: иначе режим нельзя было
-     * выключить, и приложение требовало ссылку даже там, где она не нужна.
-     */
     val mrttLinkMode: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(MRTT_LINK_MODE, profile)] ?: true
@@ -510,18 +483,11 @@ class SettingsStore(context: Context) {
         prefs[getProfileKey(WHITELIST_APPS, profile)] ?: ""
     }
 
-    /**
-     * Приложения, которым разрешён прямой выход через интернет пользователя с
-     * сохранением DNS-фильтра рекламы. Третий режим рядом с «в туннеле» и
-     * «исключено»: приложение остаётся под VPN, реклама режется, а трафик
-     * не идёт через звонок.
-     */
     val appDirectFiltered: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(APP_DIRECT_FILTERED, profile)] ?: ""
     }
 
-    /** Приложения, полностью исключённые из VPN: свой интернет без фильтра. */
     val appDirectRaw: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(APP_DIRECT_RAW, profile)] ?: ""
@@ -633,19 +599,16 @@ class SettingsStore(context: Context) {
             else -> MrttConstants.VkAutoHash.MODE_MANUAL
         }
     }
-    /** Куки сессии VK после входа через WebView; токен из них получается только на время подключения. */
     val vkSession: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         readVkSession(prefs, profile)
     }.onIo()
 
-    /** Вход через приложение ВК сохранён: привязкой стала пара токенов, а не куки. */
     val vkIdToken: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         readVkIdToken(prefs, profile)
     }.onIo()
 
-    /** `refresh_token` для входа через приложение ВК (может быть пустым). */
     val vkIdRefreshToken: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         readSecret(prefs, VK_ID_REFRESH_TOKEN_ENCRYPTED, VK_ID_REFRESH_TOKEN, profile)
@@ -673,19 +636,16 @@ class SettingsStore(context: Context) {
     }.onIo()
 
 
-    /** Своя комната Jitsi вместо комнаты из ссылки профиля; пусто — берётся из ссылки. */
     val jitsiRoomOverride: Flow<String> = dataStore.data.map { prefs -> prefs[JITSI_ROOM_OVERRIDE].orEmpty() }.onIo()
 
     suspend fun saveJitsiRoomOverride(room: String) {
         dataStore.edit { prefs -> prefs[JITSI_ROOM_OVERRIDE] = room }
     }
 
-    /** Воркеры Jitsi: каждый становится участником комнаты, поэтому их не больше, чем мест у сервера. */
     val jitsiWorkers: Flow<Int> = dataStore.data.map { prefs ->
         clampJitsiWorkers(prefs[JITSI_WORKERS] ?: MrttConstants.Tunnel.DEFAULT_JITSI_WORKERS)
     }.onIo()
 
-    /** Адрес проверки задержки в «Профилях», как URL-тест в клиентах. */
     val pingUrl: Flow<String> = dataStore.data.map { prefs -> prefs[PING_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_PING_URL }.onIo()
 
     suspend fun savePingUrl(url: String) {
@@ -701,7 +661,6 @@ class SettingsStore(context: Context) {
         prefs[getProfileKey(VK_ACCESS_TOKEN_USER_ID, profile)] ?: ""
     }
 
-    /** Хеши из ссылки вместо своего аккаунта VK. По умолчанию свой привязанный VK важнее. */
     val vkPreferLinkHashes: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(VK_PREFER_LINK_HASHES, profile)] ?: false
@@ -734,85 +693,64 @@ class SettingsStore(context: Context) {
         prefs[getProfileKey(TEMPLATE_DOMAINS_ENABLED, profile)] ?: false
     }
 
-    /** DNS-фильтр рекламы: включён независимо от маршрутизации доменов. */
     val adblockEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(ADBLOCK_ENABLED, profile)] ?: false
     }
 
-    /** Свои домены Adblock (по одному в строке, `@@домен` — исключение). */
     val adblockDomains: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(ADBLOCK_DOMAINS, profile)] ?: ""
     }
 
-    /** Подписки Adblock: JSON-массив адресов и подписей. */
     val adblockSubscriptions: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(ADBLOCK_SUBSCRIPTIONS, profile)] ?: ""
     }
 
-    /** Включённые категории правил (geosite-category-ru@ads/@telemetry/@cn), через запятую. */
     val adblockCategories: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(ADBLOCK_CATEGORIES, profile)] ?: ""
     }
 
-    /** Российские сервисы (geosite-category-ru) открываются напрямую, мимо туннеля. */
     val geositeRuEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GEOSITE_RU_ENABLED, profile)] ?: false
     }
 
-    /**
-     * Скрытие через root: порт VPN закрывается для чужих приложений на уровне
-     * iptables, а процесс клиента перестаёт быть виден по имени. Без root
-     * настройка ничего не включает — остаётся обычный режим.
-     */
     val portHideRoot: Flow<Boolean> = dataStore.data.map { prefs -> prefs[PORT_HIDE_ROOT] ?: false }
 
-    /** Приложения, которым закрыт localhost в режиме скрытия через root. */
     val portHidePackages: Flow<String> = dataStore.data.map { prefs -> prefs[PORT_HIDE_PACKAGES] ?: "" }
 
-    /** Игровой режим: каждый поток закреплён за одним воркером, без «скачущего» пинга. */
     val gameModeEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_MODE_ENABLED, profile)] ?: false
     }
 
-    /** Автовключение игрового режима, когда на экране игра из списка. */
     val gameModeAuto: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_MODE_AUTO, profile)] ?: true
     }
 
-    /** Игры, выбранные пользователем в игровом режиме. */
     val gamePackages: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_PACKAGES, profile)] ?: ""
     }
 
-    /**
-     * Игры, которые ходят через туннель, хотя по умолчанию игра идёт напрямую.
-     * Пусто у тех, кого пользователь не переопределял.
-     */
     val gameTunnelPackages: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_TUNNEL_PACKAGES, profile)] ?: ""
     }
 
-    /** Дополнительные порты игр: пакеты на них идут игровым путём. */
     val gameExtraPorts: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_EXTRA_PORTS, profile)] ?: ""
     }
 
-    /** Адреса своих серверов (кэш резолва): по ним трафик всегда идёт в туннель. */
     val ownServerIps: Flow<String> = dataStore.data.map { prefs ->
         prefs[OWN_SERVER_IPS] ?: ""
     }
 
-    /** Режим сейчас активен (вручную или автоматически) — читает TunnelManager. */
     val gameAutoActive: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(GAME_AUTO_ACTIVE, profile)] ?: false
@@ -1201,7 +1139,6 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[CONNECTION_PROFILES] = json }
     }
 
-    /** Активный профиль удалён: подключаться больше не к чему, его ссылка не должна остаться. */
     suspend fun clearActiveConnectionProfile() {
         dataStore.edit { prefs ->
             val profile = prefs[ACTIVE_PROFILE] ?: 0
@@ -1210,7 +1147,6 @@ class SettingsStore(context: Context) {
         }
     }
 
-    /** Делает профиль активным: его ссылка становится ссылкой подключения. */
     suspend fun activateConnectionProfile(id: String, link: String) {
         dataStore.edit { prefs ->
             val profile = prefs[ACTIVE_PROFILE] ?: 0
@@ -1227,7 +1163,6 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[CONNECTION_PROFILES_MIGRATED] = true }
     }
 
-    /** Старые слоты профилей, где был настроен деплой. */
     internal suspend fun legacyDeployServers(): List<DeploySettingsSnapshot> = withContext(Dispatchers.IO) {
         val prefs = dataStore.data.first()
         (MrttConstants.Profiles.MIN_INDEX..MrttConstants.Profiles.MAX_INDEX)
@@ -1235,7 +1170,6 @@ class SettingsStore(context: Context) {
             .filter { it.ip.isNotBlank() }
     }
 
-    /** Ссылки старых слотов: ссылка участника или собранная из настроек владельца. */
     internal suspend fun legacyConnectionLinks(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         val prefs = dataStore.data.first()
         (MrttConstants.Profiles.MIN_INDEX..MrttConstants.Profiles.MAX_INDEX).mapNotNull { profile ->
@@ -1420,10 +1354,6 @@ class SettingsStore(context: Context) {
         AppRoutingPatch(directFiltered = filtered, directRaw = raw),
     )
 
-    /**
-     * Одна запись DataStore на все изменения маршрутизации приложений: частичные
-     * записи из UI гонялись между собой, и последняя могла вернуть старые списки.
-     */
     suspend fun editAppRouting(patch: AppRoutingPatch) {
         dataStore.edit { prefs ->
             val profile = prefs[ACTIVE_PROFILE] ?: 0
@@ -1670,13 +1600,6 @@ class SettingsStore(context: Context) {
         }
     }
 
-    /**
-     * Вход через приложение ВК (VK ID) закончился токеном, а не куками.
-     *
-     * Куки приложения ВК нам недоступны, поэтому привязкой становится сам токен:
-     * `access_token` живёт около часа, `refresh_token` — долго, и по нему токен
-     * обновляется без повторного входа.
-     */
     suspend fun saveVkIdTokens(accessToken: String, refreshToken: String, userId: String) {
         require(accessToken.isNotBlank())
         dataStore.edit { prefs ->
@@ -1694,11 +1617,6 @@ class SettingsStore(context: Context) {
             ?.removePrefix(VK_ID_TOKEN_PREFIX)
             .orEmpty()
 
-    /**
-     * Привязка VK есть в любом виде: куки веб-сессии или токен входа через
-     * приложение ВК. Раньше проверялись только куки, поэтому вход через
-     * приложение считался «не привязан», и туннель шёл за токеном впустую.
-     */
     suspend fun hasAnyVkBinding(): Boolean = vkSession.first().isNotBlank() || vkIdToken.first().isNotBlank()
 
     suspend fun saveVkSession(cookies: String, userId: String) {
@@ -1751,13 +1669,6 @@ class SettingsStore(context: Context) {
         }
     }
 
-    /**
-     * Сохранить новый токен сессии MAX.
-     *
-     * Сервер обменивает токен при первом входе: старый после этого
-     * недействителен (`login.cred`, «Access token is broken»), поэтому
-     * присланный сервером токен обязан попасть в профиль.
-     */
     suspend fun saveMaxAccessToken(token: String) = withContext(Dispatchers.IO) {
         require(token.length >= 32 && token.none(Char::isWhitespace))
         dataStore.edit { prefs ->
@@ -2377,10 +2288,6 @@ class SettingsStore(context: Context) {
     }
 }
 
-/**
- * VK-токен из ссылки активного профиля — «аккаунт сервера». Пустая строка,
- * если ссылки нет или в ней нет токена.
- */
 internal fun linkVkTokenOf(link: String): String =
     if (link.isBlank()) "" else runCatching { parseMrttLink(link)?.vkAccessToken.orEmpty() }.getOrDefault("")
 

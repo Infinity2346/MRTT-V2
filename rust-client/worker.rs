@@ -109,7 +109,6 @@ pub struct RuntimeParams {
     pub wrap_key: [u8; 32],
     pub client_wrap_key: [u8; 32],
     pub mode: ObfsMode,
-    /// Режим «скрывать трафик»: пакеты маскируются под медиа-поток.
     pub stealth: bool,
     pub generation: u64,
     pub salt: Arc<str>,

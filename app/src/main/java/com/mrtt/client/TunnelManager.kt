@@ -93,7 +93,6 @@ object TunnelManager {
     private var processIdentity: ProcessIdentity? = null
     @Volatile
     private var nativeProcessPid: Int? = null
-    /** Реальный локальный порт клиента (для проверок; наружу не публикуется). */
     @Volatile
     private var clientLocalPort: Int = 0
     @Volatile
@@ -109,15 +108,8 @@ object TunnelManager {
     private val transportRestartPending = AtomicBoolean(false)
     private val panelRestartPending = AtomicBoolean(false)
     private val callRecoveryPending = AtomicBoolean(false)
-    /** Идёт обновление токена аккаунта из сохранённой сессии перед запуском. */
     private val refreshingAccountToken = MutableStateFlow(false)
-    /** Сколько раз подряд этот запуск обновлял токен аккаунта. */
     private var accountTokenRefreshAttempts = 0
-    /**
-     * Сколько раз подряд пересоздавали звонок без единого успешного запроса
-     * кредов. Флаг «идёт восстановление» не защищает от петли: перезапуск
-     * снимает его, и следующий мертвый звонок снова запускает восстановление.
-     */
     @Volatile
     private var callRecoveryStreak = 0
     @Volatile
@@ -128,38 +120,17 @@ object TunnelManager {
     private const val WORKER_ZERO_CONFIRMATION_MS = 4_000L
     private const val PANEL_SERVER_RESTART_DELAY_MS = 4_000L
     private const val STARTUP_DIAGNOSTIC_MS = 30_000L
-    /** Сколько перезапусков звонка допускаем подряд, пока креды не пришли. */
     private const val CREDENTIAL_RECOVERY_MAX_ATTEMPTS = 3
     private const val CREDENTIAL_RECOVERY_WINDOW_MS = 3 * 60_000L
     private const val CRASH_RESTART_STABLE_MS = 30_000L
     private const val CRASH_RESTART_MAX_DELAY_MS = 60_000L
-    /** Код выхода Rust-клиента: токен аккаунта отвергнут, нужен свежий. */
     private const val EXIT_AUTH_EXPIRED = 4
-    /** Rust не дотянулся до сети (MAX WS, bootstrap VK): это не авария. */
     private const val EXIT_NETWORK_RETRY = 5
-    /** Сколько раз подряд обновляем токен аккаунта, прежде чем просить войти заново. */
     private const val ACCOUNT_TOKEN_REFRESH_MAX_ATTEMPTS = 3
     private const val VPN_START_RETRY_MS = 10_000L
-    /**
-     * Сколько Rust-клиент может молчать, оставаясь формально живым, — но только
-     * после того, как туннель уже поднимался.
-     *
-     * Клиент присылает событие STATS: на изменении счётчиков — сразу, на пустом
-     * туннеле — раз в 3 секунды. Значит минута тишины у поднятого туннеля — это
-     * не «нечего сказать», а застрявший процесс: раньше приложение показывало
-     * «0 из N потоков» и стояло так, пока его не перезапустят. До первого
-     * поднятого потока молчание нормально: там ждут креды, капчу и звонок.
-     */
     private const val PROCESS_SILENCE_LIMIT_MS = 60_000L
-    /** Дольше этого не перезапускаем по тишине: восстановление должно успеть. */
     private const val PROCESS_SILENCE_RESTART_COOLDOWN_MS = 120_000L
-    /** Как часто смотрим на молчание процесса. */
     private const val PROCESS_SILENCE_POLL_MS = 5_000L
-    /**
-     * Сколько терпим «ноль потоков» у уже поднятого туннеля, прежде чем
-     * переподключиться. Пока туннель ни разу не поднимался, ноль — это нормальный
-     * старт (креды, капча, звонок), и трогать его нельзя.
-     */
     private const val WORKERS_ZERO_STUCK_MS = 40_000L
     private const val WORKERS_ZERO_RESTART_COOLDOWN_MS = 120_000L
     private const val TUN_LOSS_REBUILD_WINDOW_MS = 60_000L
@@ -175,10 +146,8 @@ object TunnelManager {
         val shutdownGraceMs: Long,
         val startupProgress: TunnelStartupProgress = TunnelStartupProgress(),
     ) {
-        /** Последняя настоящая причина сбоя из журнала клиента. */
         @Volatile
         var lastProcessDiagnostic: String? = null
-        /** Сколько раз сервер не ответил на запрос конфига в этой сессии. */
         @Volatile
         var configTimeouts: Int = 0
         val inputLock = Any()
@@ -200,9 +169,7 @@ object TunnelManager {
     private const val LOG_UI_FLUSH_MS = 120L
     private const val MAX_LOG_ENTRIES = 100
     private const val MAX_PENDING_LOGS = 128
-    /** Префикс ключей строк полного журнала MAX: они не склеиваются. */
     private const val VERBOSE_KEY_PREFIX = "max_step_"
-    /** Сколько строк полного журнала MAX держим в списке экрана. */
     private const val MAX_VERBOSE_LOGS = 600
     private const val MAX_LOG_MESSAGE_LENGTH = 4_096
     private val pendingLogLock = Any()
@@ -211,9 +178,7 @@ object TunnelManager {
 
     @Volatile
     private var wrapAuthTimeoutCount = 0
-    /** Сквозной номер строк полного журнала MAX. */
     private var maxStepSeq = 0L
-    /** Новый токен сессии MAX, который сервер выдал в этом запуске. */
     @Volatile
     private var appContext: Context? = null
     @Volatile
@@ -223,17 +188,13 @@ object TunnelManager {
     private var lastVpnStartAttemptMs = 0L
     @Volatile
     private var lastTunLossMs = 0L
-    /** С какого момента потоков ноль при работающем туннеле (0 — уже не ноль). */
     @Volatile
     private var workersZeroSinceMs = 0L
     @Volatile
     private var lastWorkersZeroRestartMs = 0L
-    /** Когда Rust-клиент последний раз что-то присылал (любое событие). */
     private val lastProcessEventMs = java.util.concurrent.atomic.AtomicLong(0L)
-    /** Когда последний раз перезапускали процесс из-за его молчания. */
     @Volatile
     private var lastSilenceRestartMs = 0L
-    /** Туннель в этой сессии уже поднимался: только тогда судим о молчании. */
     @Volatile
     private var tunnelEverReady = false
     @Volatile
@@ -248,20 +209,16 @@ object TunnelManager {
     @Volatile
     private var activeSettingsStore: SettingsStore? = null
 
-    /** Игровой режим: включён вручную, автодетект включён, какие игры выбраны. */
     private val gameManual = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val gameAuto = kotlinx.coroutines.flow.MutableStateFlow(true)
     private val gamePackages = java.util.concurrent.atomic.AtomicReference<Set<String>>(emptySet())
     private val gameExtraPorts = java.util.concurrent.atomic.AtomicReference("")
 
-    /** Игры, которым пользователь вручную вернул туннель. */
     private val gameTunnelPackages = java.util.concurrent.atomic.AtomicReference<Set<String>>(emptySet())
     private val gameForeground = java.util.concurrent.atomic.AtomicReference<String?>(null)
 
-    /** Активен ли игровой режим прямо сейчас (для UI и для команды в Rust). */
     val gameModeActive = kotlinx.coroutines.flow.MutableStateFlow(false)
 
-    /** Какое приложение на экране (если пользователь дал доступ к данным об использовании). */
     val foregroundPackage = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private var gameWatchJob: Job? = null
     @Volatile
@@ -300,11 +257,6 @@ object TunnelManager {
     val cooldownActive = MutableStateFlow(false)
     private var cooldownJob: Job? = null
 
-    /**
-     * Одна попытка автоподключения на запуск процесса приложения, а не на
-     * экран: переключение вкладок не должно снова поднимать туннель, который
-     * пользователь только что выключил.
-     */
     private val autoConnectAttempted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun markAutoConnectAttempted(): Boolean = autoConnectAttempted.compareAndSet(false, true)
@@ -409,10 +361,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Перечитывает настройки игрового режима и, если что-то изменилось,
-     * отправляет клиенту `GAME_MODE|...`. Без туннеля просто запоминает.
-     */
     fun refreshGameMode() {
         val store = activeSettingsStore
         if (store == null) {
@@ -432,7 +380,6 @@ object TunnelManager {
         }
     }
 
-    /** Пользователь переключил режим вручную. */
     fun setGameModeEnabled(context: Context, enabled: Boolean) {
         val store = activeSettingsStore ?: SettingsStore(context.applicationContext).also {
             activeSettingsStore = it
@@ -474,13 +421,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Долгое нажатие в списке игр: «через туннель» или «напрямую».
-     *
-     * По умолчанию игра идёт напрямую: так пинг ровнее. Но если игра без VPN не
-     * открывается, человек возвращает её в туннель — выбор запоминается отдельным
-     * списком и переживает переподключение.
-     */
     fun setGameRoute(context: Context, packageName: String, throughTunnel: Boolean) {
         val pkg = packageName.trim()
         if (pkg.isEmpty()) return
@@ -513,11 +453,6 @@ object TunnelManager {
         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
     }.getOrDefault(packageName)
 
-    /**
-     * Раскладывает выбор по спискам приложений: «через туннель» — убрать из
-     * «напрямую», «напрямую» — добавить в «напрямую» без фильтра. Одна запись,
-     * чтобы списки не разъехались.
-     */
     private suspend fun syncGameRouteToAppLists(
         store: SettingsStore,
         packageName: String,
@@ -539,14 +474,6 @@ object TunnelManager {
         reloadVpn()
     }
 
-    /**
-     * Связывает список игр со списками маршрутов приложений.
-     *
-     * Игра по умолчанию получает режим «напрямую» (свой интернет): игровой трафик
-     * не должен идти через мост, иначе пинг скачет. Правим ровно те списки, из
-     * которых вкладка «Приложения» строит режимы, — чёрный и белый списки не
-     * трогаем, чтобы не менять состав туннеля на уровне системы.
-     */
     private suspend fun syncGamePackagesToRouting(
         store: SettingsStore,
         previous: Set<String>,
@@ -617,7 +544,6 @@ object TunnelManager {
         }
     }
 
-    /** Запускает слежение за активным приложением (только при включённом автодетекте). */
     fun ensureGameWatcher(context: Context) {
         if (gameWatchJob?.isActive == true) return
         if (!gameAuto.value) return
@@ -956,11 +882,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Клиент спрашивает, чьё это соединение. Ответ уходит командой
-     * `APP_DIRECT_FLOW|src|dst|proto|direct|filtered`: приложение либо остаётся в
-     * туннеле (`direct=0`), либо идёт своим интернетом — с фильтром рекламы или без.
-     */
     private fun answerFlowOwner(
         event: TunnelEventParser.Event.FlowOwner,
         identity: ProcessIdentity,
@@ -975,7 +896,6 @@ object TunnelManager {
         }
     }
 
-    /** Сообщает клиенту, включён ли прямой режим для приложений. */
     fun refreshAppDirect() {
         val identity = processIdentity
         val context = activeContext()
@@ -1012,21 +932,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Клиент сообщил, что VK больше не принимает токен аккаунта.
-     *
-     * Звонок тут ни при чём: переподключение с тем же токеном пойдёт по кругу.
-     * Поэтому сразу берём свежий токен из сохранённой сессии и перезапускаемся
-     * сами — без «выключить и включить VPN».
-     */
-    /**
-     * MAX не принял сохранённый токен.
-     *
-     * Здесь нельзя трогать вход в VK: раньше отказ MAX приходил событием
-     * «истёк токен аккаунта», приложение обновляло VK-сессию и после
-     * переключения режимов MAX → VK вход приходилось делать заново. Теперь
-     * чинится только привязка MAX, а VK остаётся как был.
-     */
     private fun handleMaxTokenRejected(identity: ProcessIdentity) {
         if (!isCurrent(identity) || !running.value) return
         val params = currentParams ?: return
@@ -1043,13 +948,6 @@ object TunnelManager {
         currentParams = params.copy(accountTokenVerified = true)
     }
 
-    /**
-     * MAX выдал новый токен сессии — сохраняем его.
-     *
-     * Сервер обменивает токен при первом входе: старый после этого
-     * недействителен (`login.cred`, «Access token is broken»). Без сохранения
-     * каждый следующий запуск входил бы заново и упирался в отказ.
-     */
     private fun handleMaxSessionToken(token: String) {
         if (token.length < 32) return
         maxSessionTokenToPersist = token
@@ -1162,11 +1060,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Пересоздание звонка после отказа в кредах. Три перезапуска подряд без
-     * единого успешного запроса — и дальше не долбим VK: показываем причину и
-     * оставляем туннель в покое, пока пользователь сам не переподключится.
-     */
     private fun recoverCredentialsFailure(identity: ProcessIdentity) {
         if (!isCurrent(identity) || !running.value) return
         val params = currentParams ?: return
@@ -1640,11 +1533,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Гасим индикатор потоков. Без этого после выключения VPN на экране
-     * «Соединения» оставались светлые точки: targetWorkers не сбрасывался,
-     * а TrafficMonitor держал последний набор готовых воркеров.
-     */
     private fun clearWorkerIndicators(identity: ProcessIdentity? = null) {
         identity?.readyWorkers?.clear()
         identity?.dtlsWorkers?.clear()
@@ -1653,20 +1541,11 @@ object TunnelManager {
         TrafficMonitor.onTunnelStopped()
     }
 
-    /** Запуск зависит от токена аккаунта VK или MAX. */
     private fun needsAccountToken(params: TunnelParams): Boolean =
         params.maxGroupId.isNotBlank() ||
             params.vkHashMode == MrttConstants.VkAutoHash.MODE_AUTO_JS ||
             params.vkAuthMode == MrttConstants.VkAuth.MODE_AUTO_JS
 
-    /**
-     * Свежий токен аккаунта из сохранённой сессии.
-     *
-     * Сессия VK — это куки: токен из них выдаётся заново сколько угодно раз, пока
-     * VK принимает саму сессию. Поэтому переподключение после звонка или пропажи
-     * сети не должно упираться в протухший токен, который приложение передало
-     * клиенту при прошлом запуске.
-     */
     private suspend fun refreshAccountToken(context: Context, params: TunnelParams): TunnelParams {
         // Счётчик обнуляется только при старте по инициативе человека: иначе цикл
         // «перезапуск → обновление» мог бы не закончиться никогда.
@@ -2124,15 +2003,6 @@ object TunnelManager {
             }
     }
 
-    /**
-     * Следит, что Rust-клиент вообще подаёт признаки жизни.
-     *
-     * Симптом, ради которого это появилось: телефон полежал пару минут без
-     * действий, туннель переставал отвечать, а приложение продолжало показывать
-     * подключение с «0 из N потоков». Процесс при этом жив и молчит: ни одного
-     * события, ни одной строки в журнале. Снаружи это выглядит как зависание,
-     * и лечилось только ручным перезапуском.
-     */
     private fun startProcessSilenceWatch(identity: ProcessIdentity) {
         processSilenceJob?.cancel()
         processSilenceJob = activeScope.launch {
@@ -3122,10 +2992,6 @@ object TunnelManager {
     @Volatile
     private var probeWaiter: kotlinx.coroutines.CompletableDeferred<Int>? = null
 
-    /**
-     * Ping through the tunnel, in ms: the Rust client connects to [host] over its workers. An HTTP request from here
-     * would not measure anything, because the app's own UID is excluded from its VPN. Null when nothing answered.
-     */
     suspend fun probeThroughTunnel(host: String, port: Int): Int? {
         val identity = processIdentity ?: return null
         val source = config.value?.trim()?.takeIf { it.startsWith("TUNCONF:") }
@@ -3141,10 +3007,6 @@ object TunnelManager {
         }
     }
 
-    /**
-     * Ping of a profile without a tunnel to it, in ms: a one-shot run of the client sends a DTLS ClientHello straight
-     * to the server's UDP port. It shares nothing with a running tunnel. Null when the server did not answer.
-     */
     suspend fun probeDirect(context: android.content.Context, host: String, port: Int): Int? =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             runCatching {
@@ -3236,7 +3098,6 @@ data class TunnelParams(
     val vkAccessToken: String = "",
     val maxGroupId: String = "",
     val maxAccessToken: String = "",
-    /** deviceId страницы web.max.ru: MAX привязывает токен к устройству. */
     val maxDeviceId: String = "",
     val jitsiRoom: String = "",
     val jitsiWorkers: Int = MrttConstants.Tunnel.DEFAULT_JITSI_WORKERS,
@@ -3251,27 +3112,11 @@ data class TunnelParams(
     val ipIsWhitelist: Boolean = false,
     val directIps: String = "",
     val adblockEnabled: Boolean = false,
-    /** Включённые категории Adblock (`geosite-category-ru@ads` и т.п.) через запятую. */
     val adblockCategories: String = "",
-    /** Свои домены Adblock: по одному в строке, `@@домен` — исключение. */
     val adblockDomains: String = "",
-    /** Российские сервисы (geosite-category-ru) идут напрямую, мимо туннеля. */
     val geositeRuEnabled: Boolean = false,
-    /** Скрытие через root: localhost закрыт чужим приложениям, процесс переименован. */
     val portHideRoot: Boolean = false,
-    /** Приложения, которым закрыт localhost (список пакетов через запятую). */
     val portHidePackages: String = "",
-    /** Скрывать порты и трафик туннеля от сторонних приложений. */
     val hideFingerprint: Boolean = false,
-    /**
-     * Токен из [vkAccessToken]/[maxAccessToken] уже проверен этим запуском.
-     *
-     * Токен аккаунта живёт часами и переживает звонок только до первого
-     * переподключения: VK отвечает «User authorization failed» (код 5), и старый
-     * клиент умирал с кодом 1, а приложение перезапускало его с тем же мёртвым
-     * токеном по кругу. Поэтому каждый перезапуск сначала берёт свежий токен из
-     * сохранённой сессии, и только этот флаг говорит, что токен можно брать из
-     * параметров как есть.
-     */
     val accountTokenVerified: Boolean = false,
 )

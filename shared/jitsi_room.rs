@@ -1,6 +1,3 @@
-//! A Jitsi Meet room as a datagram carrier. Each participant is a guest with its own WebRTC connection to the
-//! videobridge (JVB); bytes travel as `EndpointMessage`s over the bridge datachannel, addressed to one endpoint.
-//! Everything runs inside this process: XMPP over WebSocket for signalling, webrtc-rs for ICE/DTLS/SCTP.
 
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
@@ -17,7 +14,6 @@ use webrtc::peer_connection::{
     RTCPeerConnectionState, RTCSessionDescription,
 };
 
-/// Resolver used when the system one finds nothing: the Android client runs as a bare executable and has its own DNS.
 pub type FallbackResolver = fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<std::net::IpAddr>> + Send>>;
 static FALLBACK_RESOLVER: std::sync::OnceLock<FallbackResolver> = std::sync::OnceLock::new();
 
@@ -25,7 +21,6 @@ pub fn set_fallback_resolver(resolver: FallbackResolver) {
     let _ = FALLBACK_RESOLVER.set(resolver);
 }
 
-/// TCP to a Jitsi host, trying the system resolver first and the fallback one after it.
 async fn connect_tcp(host: &str, port: u16) -> Result<tokio::net::TcpStream> {
     let mut addresses: Vec<std::net::IpAddr> = tokio::net::lookup_host((host, port))
         .await
@@ -50,30 +45,21 @@ async fn connect_tcp(host: &str, port: u16) -> Result<tokio::net::TcpStream> {
     Err(last_error.unwrap_or_else(|| anyhow!("нет адресов")).context(format!("подключение к {host}")))
 }
 
-/// Display name prefix of the MRTT server's participants; clients address their packets to these endpoints.
 pub const SERVER_DISPLAY: &str = "mrtt-s";
 const STEP_TIMEOUT: Duration = Duration::from_secs(20);
 const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 const KEEPALIVE: Duration = Duration::from_secs(25);
 const INBOUND_QUEUE: usize = 1024;
-/// Datagrams waiting for the sender task. A full queue drops them, as a congested UDP path would.
 const OUTBOX_QUEUE: usize = 512;
-/// Bytes SCTP may hold unacknowledged. Without a bound a fast upload turns into seconds of delay,
-/// but 64 KB was itself the limit: at 2 Mbit/s one seat could hold only 260 ms in flight, so any
-/// jitter stalled the upload. 256 KB keeps about a second of a single seat's bandwidth.
 const SEND_BUFFER: usize = 256 * 1024;
-/// Datagrams to one endpoint already waiting go out as one message: the bridge limits messages, not bytes.
 const BATCH_BYTES: usize = 12 * 1024;
 const OUTBOX_DRAIN: usize = 64;
-/// How long the UDP path may take before the bridge WebSocket takes over, when the bridge offers one.
 const CHANNEL_WAIT: Duration = Duration::from_secs(8);
 const HELLO_WAIT: Duration = Duration::from_secs(3);
 const CLIENT_HELLO: &str = r#"{"colibriClass":"ClientHello"}"#;
-/// Docker installs (docker-jitsi-meet) serve this XMPP domain whatever the web host is.
 const DOCKER_DOMAIN: &str = "meet.jitsi";
 const BASE64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
-/// The features Jicofo expects from a Jitsi Meet client before it sends the session-initiate.
 const FEATURES: &[&str] = &[
     "http://jabber.org/protocol/caps",
     "http://jitsi.org/json-encoded-sources",
@@ -99,7 +85,6 @@ pub struct RoomTarget {
 }
 
 impl RoomTarget {
-    /// `host/room`, as carried in links and server settings.
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim().trim_start_matches("https://").trim_start_matches("http://");
         let (host, room) = value.split_once('/')?;
@@ -117,7 +102,6 @@ impl std::fmt::Display for RoomTarget {
     }
 }
 
-/// Sends datagrams to endpoints of the room; cheap to clone into other tasks.
 #[derive(Clone)]
 pub struct RoomSender {
     outbox: mpsc::Sender<(String, Vec<u8>)>,
@@ -138,7 +122,6 @@ impl RoomSender {
     }
 }
 
-/// The way to the bridge: its datachannel over UDP, or its WebSocket when UDP does not get through.
 #[derive(Clone)]
 enum BridgeLink {
     Channel(Arc<dyn DataChannel>),
@@ -158,7 +141,6 @@ impl BridgeLink {
     }
 }
 
-/// Groups datagrams by endpoint, keeping their order, with no message over [`BATCH_BYTES`].
 fn batch_up(items: impl Iterator<Item = (String, Vec<u8>)>) -> Vec<(String, Vec<Vec<u8>>)> {
     let mut batches: Vec<(String, Vec<Vec<u8>>, usize)> = Vec::new();
     for (to, data) in items {
@@ -188,7 +170,6 @@ async fn pump_out(mut outbox: mpsc::Receiver<(String, Vec<u8>)>, link: BridgeLin
     }
 }
 
-/// Hands a bridge message to the participant; ServerHello only says the bridge is ready.
 fn deliver(text: &[u8], inbound: &mpsc::Sender<(String, Vec<u8>)>, hello: &watch::Sender<bool>) {
     let Some((from, datagrams)) = parse_endpoint_message(text) else {
         if serde_json::from_slice::<serde_json::Value>(text)
@@ -204,7 +185,6 @@ fn deliver(text: &[u8], inbound: &mpsc::Sender<(String, Vec<u8>)>, hello: &watch
     }
 }
 
-/// One guest in the room with an open way to the bridge.
 pub struct Participant {
     endpoint: String,
     sender: RoomSender,
@@ -224,7 +204,6 @@ impl Participant {
         self.sender.clone()
     }
 
-    /// Endpoints of other participants whose display name starts with `prefix`, sorted.
     pub fn peers(&self, prefix: &str) -> Vec<String> {
         peers_in(&self.occupants.borrow(), prefix)
     }
@@ -233,7 +212,6 @@ impl Participant {
         self.occupants.clone()
     }
 
-    /// Next datagram as (sender endpoint, bytes); None once the participant is gone.
     pub async fn recv(&mut self) -> Option<(String, Vec<u8>)> {
         self.inbound.recv().await
     }
@@ -254,7 +232,6 @@ pub fn peers_in(occupants: &HashMap<String, String>, prefix: &str) -> Vec<String
     list
 }
 
-/// `raw` for one datagram, `raws` for several.
 fn endpoint_message(to: &str, datagrams: &[Vec<u8>]) -> String {
     let payload = match datagrams {
         [one] => format!(r#""raw":"{}""#, BASE64.encode(one)),
@@ -266,7 +243,6 @@ fn endpoint_message(to: &str, datagrams: &[Vec<u8>]) -> String {
     format!(r#"{{"colibriClass":"EndpointMessage","to":"{to}","msgPayload":{{{payload}}}}}"#)
 }
 
-/// (sender, datagrams) of an `EndpointMessage` carrying raw bytes; None for any other bridge message.
 fn parse_endpoint_message(text: &[u8]) -> Option<(String, Vec<Vec<u8>>)> {
     let value: serde_json::Value = serde_json::from_slice(text).ok()?;
     if value.get("colibriClass")?.as_str()? != "EndpointMessage" {
@@ -299,7 +275,6 @@ fn attr(xml: &str, name: &str) -> Option<String> {
     None
 }
 
-/// Every `<tag …>…</tag>` or `<tag …/>` element of `xml`, raw.
 fn elements<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
     let mut out = Vec::new();
     let open = format!("<{tag}");
@@ -329,7 +304,6 @@ fn inner_text(element: &str) -> Option<&str> {
     (start <= end).then(|| element[start..end].trim())
 }
 
-/// SDP offer with only the data section of Jicofo's session-initiate: we carry no audio or video.
 fn offer_from_jingle(jingle: &str) -> Result<(String, String)> {
     let data = elements(jingle, "content")
         .into_iter()
@@ -355,7 +329,6 @@ fn offer_from_jingle(jingle: &str) -> Result<(String, String)> {
     Ok((sdp, port))
 }
 
-/// `candidate:…` attribute of a Jingle candidate; None for anything but UDP, the only protocol webrtc-rs dials.
 fn sdp_candidate(candidate: &str) -> Option<String> {
     if attr(candidate, "protocol").as_deref() != Some("udp") {
         return None;
@@ -374,12 +347,10 @@ fn sdp_candidate(candidate: &str) -> Option<String> {
     ))
 }
 
-/// The bridge's WebSocket from the session-initiate, when it offers one.
 fn bridge_socket_url(jingle: &str) -> Option<String> {
     elements(jingle, "web-socket").into_iter().find_map(|element| attr(element, "url")).filter(|url| url.starts_with("wss://"))
 }
 
-/// session-accept body: every offered content answered with our ICE/DTLS, audio and video without sources.
 fn accept_contents(jingle: &str, ufrag: &str, pwd: &str, fingerprint: &str, port: &str) -> String {
     let transport = |extra: &str| {
         format!(
@@ -413,7 +384,6 @@ fn accept_contents(jingle: &str, ufrag: &str, pwd: &str, fingerprint: &str, port
     out
 }
 
-/// Answers IQ requests addressed to us (disco, ping, Jingle updates); true when `stanza` was one.
 fn answer_iq(stanza: &str, out: &mpsc::UnboundedSender<String>) -> bool {
     if !stanza.starts_with("<iq") {
         return false;
@@ -433,7 +403,6 @@ fn answer_iq(stanza: &str, out: &mpsc::UnboundedSender<String>) -> bool {
     true
 }
 
-/// Tracks MUC presence: occupant nick -> display name.
 fn track_presence(stanza: &str, room_jid: &str, occupants: &watch::Sender<HashMap<String, String>>) {
     if !stanza.starts_with("<presence") {
         return;
@@ -503,7 +472,6 @@ impl Xmpp {
         self.out.send(text).map_err(|_| anyhow!("XMPP закрыт"))
     }
 
-    /// Next stanza containing `needle`; IQ requests met on the way are answered.
     async fn wait(&mut self, needle: &str) -> Result<String> {
         tokio::time::timeout(STEP_TIMEOUT, async {
             loop {
@@ -522,7 +490,6 @@ impl Xmpp {
         .map_err(|_| anyhow!("XMPP: нет ответа ({needle})"))?
     }
 
-    /// Anonymous login; returns the bound JID.
     async fn login(&mut self, domain: &str) -> Result<String> {
         let open = format!("<open to=\"{domain}\" version=\"1.0\" xmlns=\"urn:ietf:params:xml:ns:xmpp-framing\"/>");
         self.send(open.clone())?;
@@ -540,7 +507,6 @@ impl Xmpp {
         Ok(jid.to_owned())
     }
 
-    /// The MUC service of `domain`, from its disco#items (conference.* or muc.*).
     async fn muc_domain(&mut self, domain: &str) -> Result<String> {
         self.send(format!(
             "<iq type=\"get\" to=\"{domain}\" id=\"items\" xmlns=\"jabber:client\"><query xmlns=\"http://jabber.org/protocol/disco#items\"/></iq>"
@@ -556,7 +522,6 @@ impl Xmpp {
     }
 }
 
-/// Opens the bridge's own WebSocket; messages on it are the same as on the datachannel.
 async fn open_bridge_socket(
     url: &str,
     inbound: mpsc::Sender<(String, Vec<u8>)>,
@@ -622,7 +587,6 @@ impl PeerConnectionEventHandler for EventHandler {
     }
 }
 
-/// Joins `target` as a guest named `display` and opens the bridge datachannel.
 pub async fn join(target: &RoomTarget, display: &str) -> Result<Participant> {
     tokio::time::timeout(JOIN_TIMEOUT, async {
         match join_as(target, display, &target.host).await {

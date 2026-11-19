@@ -12,11 +12,8 @@ data class MrttLink(
     val hashes: List<String> = emptyList(),
     val vkAccessToken: String = "",
     val maxGroupId: String = "",
-    /** Комната Jitsi сервера `host/room`: через неё работает транспорт Jitsi. */
     val jitsiRoom: String = "",
-    /** Сколько мест держит сервер в комнате Jitsi; 0, если ссылка этого не сообщает. */
     val jitsiSeats: Int = 0,
-    /** Транспорт профиля: `vk`, `jitsi` или пусто. MAX в ссылке не бывает: он на приватных данных клиента. */
     val transport: String = "",
 )
 
@@ -150,7 +147,6 @@ private val JITSI_ROOM_REGEX = Regex("^[a-z0-9.:-]+/[a-z0-9]{1,64}$")
 
 fun isValidJitsiRoom(value: String): Boolean = value.matches(JITSI_ROOM_REGEX)
 
-/** Ссылка на конференцию Jitsi (`https://meet.example.org/Room`) в виде `host/room`; null, если это не она. */
 fun parseJitsiRoomInput(raw: String): String? {
     val value = raw.trim().removePrefix("https://").removePrefix("http://")
         .substringBefore('?').substringBefore('#').trimEnd('/').lowercase()

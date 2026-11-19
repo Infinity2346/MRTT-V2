@@ -6,12 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Скорость туннеля в реальном времени. Rust-клиент присылает нарастающие счётчики байт (событие STATS),
- * здесь они превращаются в скорость за интервал, историю для графика и итоги сессии.
- */
 object TrafficMonitor {
-    /** Одна точка графика: скорость в байтах в секунду. */
     data class Sample(val atMs: Long, val downBps: Float, val upBps: Float)
 
     data class Totals(
@@ -30,13 +25,7 @@ object TrafficMonitor {
     // Держим чуть больше окна: графику не нужны точки, которых он не рисует,
     // а на слабом телефоне список из двух минут — лишняя работа на каждый кадр.
     private const val KEEP_MS = 70_000L
-    /** Если счётчики не менялись дольше этого, скорость честно ноль. */
     private const val FLAT_AFTER_MS = 700L
-    /**
-     * Разрыв больше этого — это уже другая сессия, а не пауза в трафике:
-     * туннель переподнимался, пока приложение было в фоне. Цифры «с прошлого
-     * раза» после такого разрыва показывать нельзя.
-     */
     private const val SESSION_GAP_MS = 5_000L
 
     private val _samples = MutableStateFlow<List<Sample>>(emptyList())
@@ -46,7 +35,6 @@ object TrafficMonitor {
     val totals: StateFlow<Totals> = _totals.asStateFlow()
 
     private val _readyWorkers = MutableStateFlow<Set<Int>>(emptySet())
-    /** Номера воркеров, у которых поток поднят (пришло событие Ready). */
     val readyWorkers: StateFlow<Set<Int>> = _readyWorkers.asStateFlow()
 
     private var lastAt = 0L
@@ -62,10 +50,6 @@ object TrafficMonitor {
     private var lastActive = 0
     private var ticker: kotlinx.coroutines.Job? = null
 
-    /**
-     * Раз в 250 мс пересчитывать «сейчас». Без этого подписи висели на
-     * последнем значении, пока Rust не пришлёт следующий тик.
-     */
     @Synchronized
     fun startTicking() {
         if (ticker?.isActive == true) return
@@ -101,11 +85,6 @@ object TrafficMonitor {
         _readyWorkers.value = emptySet()
     }
 
-    /**
-     * Начать новую сессию тарифа: счётчики пошли заново (туннель переподнялся
-     * внутри того же процесса). Итоги и средние считаются от нуля, история
-     * графика сохраняется — она про то, что было, а не про «этот тариф».
-     */
     @Synchronized
     fun beginSession(up: Long = 0L, down: Long = 0L, now: Long = SystemClock.elapsedRealtime()) {
         lastAt = now
@@ -129,11 +108,6 @@ object TrafficMonitor {
         if (worker > 0) _readyWorkers.value = _readyWorkers.value + worker
     }
 
-    /**
-     * Воркер перестал быть готовым: порвал поток, VPN выключили или туннель
-     * переподнимается. Раньше набор только пополнялся, и на экране «Соединения»
-     * точки оставались светлыми даже после выключения VPN.
-     */
     @Synchronized
     fun workerNotReady(worker: Int) {
         if (worker > 0 && _readyWorkers.value.contains(worker)) {
@@ -141,10 +115,6 @@ object TrafficMonitor {
         }
     }
 
-    /**
-     * Туннель выключен. Гасим весь индикатор потоков: раз подключения нет, ни
-     * один поток не «поднят», и ни одна точка не должна светиться.
-     */
     @Synchronized
     fun onTunnelStopped(now: Long = SystemClock.elapsedRealtime()) {
         if (_readyWorkers.value.isNotEmpty()) _readyWorkers.value = emptySet()
@@ -208,11 +178,6 @@ object TrafficMonitor {
         publish(now, active)
     }
 
-    /**
-     * Приложение вернулось на экран. Пока оно было в фоне, счётчики могли
-     * остановиться — тогда на экране висела скорость прошлого тарифа. Если
-     * свежих замеров нет, показываем честный ноль, а не память о прошлом.
-     */
     @Synchronized
     fun onAppResumed(now: Long = SystemClock.elapsedRealtime()) {
         if (lastAt == 0L) return
@@ -223,10 +188,6 @@ object TrafficMonitor {
         publish(now, lastActive)
     }
 
-    /**
-     * Тик без нового замера: обновляем «сейчас», чтобы цифры не висели прошлой
-     * скоростью, когда трафика нет.
-     */
     @Synchronized
     fun onIdleTick(now: Long = SystemClock.elapsedRealtime()) {
         if (lastAt == 0L) return
@@ -261,7 +222,6 @@ object TrafficMonitor {
         )
     }
 
-    /** «12,4 Мбит/с» — скорость в привычных единицах. */
     fun formatSpeed(bytesPerSecond: Float): String {
         val bits = bytesPerSecond * 8f
         return when {

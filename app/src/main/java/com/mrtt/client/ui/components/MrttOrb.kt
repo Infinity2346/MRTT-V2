@@ -40,10 +40,6 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/**
- * Кнопка подключения: капля, чей край идёт медленной волной, сильнее при подключении, и кольца, расходящиеся от неё.
- * Пока идёт подключение, по краю бежит яркий штрих. Между состояниями всё переходит плавно, ничего не прыгает.
- */
 @Composable
 internal fun MrttOrb(
     connected: Boolean,

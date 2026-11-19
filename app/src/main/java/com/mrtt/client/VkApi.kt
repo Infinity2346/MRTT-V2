@@ -25,10 +25,6 @@ internal object VkApi {
         val joinLink: String,
     )
 
-    /**
-     * `calls.start` требует peer_id — свой id пользователя. Без него VK отвечает ошибкой,
-     * поэтому id берём из токена. Результат кешируется на время жизни токена.
-     */
     fun startCall(token: String, peerId: String): VkApiResult<StartedCall> =
         request("calls.start", token, mapOf("peer_id" to peerId)) { json ->
         val response = json.optJSONObject("response")

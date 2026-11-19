@@ -1,6 +1,3 @@
-//! The server's seats in its Jitsi room. Each seat is a participant named `mrtt-s<N>`; a client worker sends its
-//! tunnel datagrams to one seat, and the seat hands them to the ordinary UDP peer port on 127.0.0.1 through a
-//! socket of that worker's own. The protocol engine sees each worker as a local UDP peer and needs no change.
 
 use crate::App;
 use crate::jitsi_room::{self, RoomTarget};
@@ -17,7 +14,6 @@ const REJOIN_MIN: Duration = Duration::from_secs(3);
 const REJOIN_MAX: Duration = Duration::from_secs(60);
 const DATAGRAM_MAX: usize = 2048;
 
-/// The room and how many seats to hold in it; no room keeps the server out of Jitsi.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Config {
     pub room: Option<RoomTarget>,
@@ -32,7 +28,6 @@ impl Config {
 
 static CONFIG: OnceLock<watch::Sender<Config>> = OnceLock::new();
 
-/// Holds the seats of the configured room and moves them whenever `configure` changes it.
 pub fn start(app: Arc<App>, peer_port: u16, initial: Config) {
     let (tx, mut rx) = watch::channel(initial);
     let _ = CONFIG.set(tx);
@@ -63,17 +58,14 @@ pub fn configure(config: Config) {
     }
 }
 
-/// How many seats the server holds; links carry it so clients start no more workers than that.
 pub fn current_seats() -> usize {
     CONFIG.get().map_or(0, |config| config.borrow().seats)
 }
 
-/// The room links should carry, if the server sits in one.
 pub fn current_room() -> Option<String> {
     CONFIG.get()?.borrow().room.as_ref().map(ToString::to_string)
 }
 
-/// Starts `seats` participants in `target`, each re-joining on its own when the room drops it.
 fn spawn_seats(app: &Arc<App>, target: &RoomTarget, seats: usize, peer_port: u16) -> Vec<tokio::task::JoinHandle<()>> {
     (0..seats.max(1)).map(|seat| {
         let target = target.clone();
@@ -144,7 +136,6 @@ async fn run_seat(app: &Arc<App>, target: &RoomTarget, seat: usize, peer_port: u
     result
 }
 
-/// Replies of the protocol engine for one worker go back to that worker's endpoint.
 async fn pump_back(socket: Arc<UdpSocket>, sender: jitsi_room::RoomSender, to: String) {
     let mut buffer = vec![0u8; DATAGRAM_MAX];
     while let Ok(len) = socket.recv(&mut buffer).await {

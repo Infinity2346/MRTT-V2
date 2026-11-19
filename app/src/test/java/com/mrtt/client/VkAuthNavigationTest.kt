@@ -6,13 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Ссылки на приложение ВК: какие из них WebView должен отдавать системе.
- *
- * Проверяем чистую логику схем — это то, что ломалось: `vk://` и `intent://`
- * WebView пытался загрузить сам, получал ошибку и кнопка «войти через приложение»
- * просто ничего не делала.
- */
 class VkAuthNavigationTest {
 
     @Test

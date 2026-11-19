@@ -41,7 +41,6 @@ import com.mrtt.client.ui.components.MrttSegmentedControl
 import com.mrtt.client.ui.components.MrttSettingRow
 import com.mrtt.client.ui.design.MrttSizes
 
-/** Загрузка с перезапросом: [reload] увеличивается после каждого изменения на сервере. */
 @Composable
 internal fun <T> rememberServerData(control: ServerControl, reload: Int, load: suspend ServerControl.() -> T): Pair<T?, String?> {
     var data by remember(control) { mutableStateOf<T?>(null) }

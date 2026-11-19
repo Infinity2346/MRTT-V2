@@ -1,32 +1,11 @@
-//! Фильтр рекламы, трекеров и телеметрии на уровне DNS.
-//!
-//! Списки читаются из нескольких файлов: базовый снимок из ассетов приложения и файлы
-//! пользователя (свои домены и скачанные подписки). Каждый запрос DNS к перехваченному
-//! домену получает локальный «пустой» ответ, поэтому трафик рекламных сетей не уходит ни
-//! в туннель, ни напрямую. Фильтр работает как надстройка над domain routing: он не
-//! включает маршрутизацию доменов, а только отвечает на запросы.
-//!
-//! Почему не NXDOMAIN: на «имени не существует» часть приложений (в том числе Telegram и
-//! YouTube при загрузке превью и медиа) уходит в свою ветку «сеть недоступна» и
-//! останавливает загрузку до следующей попытки. Пустой ответ NODATA с записью SOA —
-//! обычный ответ «имя есть, но адреса такого типа нет»: клиент спокойно продолжает
-//! загрузку остального. Так же поступают AdGuard и Pi-hole.
-//!
-//! Кроме доменов поддерживаются «категории» — наборы правил в духе geosite
-//! (`geosite-category-ru@ads`): категория включается пользователем и грузится отдельным
-//! файлом, всё содержимое добавляется к общему списку блокировки.
 
 use std::collections::HashSet;
 use std::sync::{OnceLock, RwLock};
 
-/// Верхняя граница записей: файл читается с устройства, лишнее отбрасывается.
 pub const MAX_ADBLOCK_DOMAINS: usize = 300_000;
 
-/// Сколько файлов правил принимаем за один запуск (база + свои + подписки + категории).
 pub const MAX_RULE_FILES: usize = 32;
 
-/// Категории правил, которые понимает фильтр. Имена повторяют geosite, чтобы списки
-/// MetaCubeX/v2fly подключались без переименования.
 pub const CATEGORY_ADS_ALL: &str = "geosite-category-ads-all";
 pub const CATEGORY_ADS_TELEMETRY: &str = "geosite-category-ads-and-telemetry";
 pub const CATEGORY_TELEMETRY: &str = "geosite-category-telemetry";
@@ -37,7 +16,6 @@ pub const CATEGORY_RU_ADS: &str = "geosite-category-ru@ads";
 pub const CATEGORY_RU_TELEMETRY: &str = "geosite-category-ru@telemetry";
 pub const CATEGORY_RU_CN: &str = "geosite-category-ru@cn";
 
-/// Порядок тот же, что в интерфейсе: сначала мировые наборы, потом российские.
 pub const KNOWN_CATEGORIES: &[&str] = &[
     CATEGORY_ADS_ALL,
     CATEGORY_ADS_TELEMETRY,
@@ -51,24 +29,18 @@ pub const KNOWN_CATEGORIES: &[&str] = &[
 ];
 
 static ADBLOCK_LIST: OnceLock<HashSet<String>> = OnceLock::new();
-/// Исключения из списка (`@@домен` в своих правилах): такие домены и их поддомены
-/// открываются всегда, даже если сети рекламы попали в набор.
 static ADBLOCK_ALLOW: OnceLock<HashSet<String>> = OnceLock::new();
-/// Какие категории реально попали в список: интерфейс показывает это как «включено».
 static ACTIVE_CATEGORIES: OnceLock<RwLock<Vec<String>>> = OnceLock::new();
 
 fn active_categories() -> &'static RwLock<Vec<String>> {
     ACTIVE_CATEGORIES.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-/// Набор хостов, без которых не грузится обычный контент (см. [`CONTENT_HOSTS`]).
 fn content_critical_set() -> &'static HashSet<String> {
     static SET: OnceLock<HashSet<String>> = OnceLock::new();
     SET.get_or_init(|| CONTENT_HOSTS.iter().map(|host| (*host).to_string()).collect())
 }
 
-/// Приводит имя категории к каноническому виду: `ads`, `ru@ads`, `geosite-category-ru@ads`
-/// и `category-ru@ads` — одно и то же.
 pub fn normalize_category(raw: &str) -> Option<String> {
     let mut name = raw.trim().to_ascii_lowercase();
     if name.is_empty() {
@@ -104,7 +76,6 @@ pub fn normalize_category(raw: &str) -> Option<String> {
         .map(|known| (*known).to_string())
 }
 
-/// Пути к файлам категорий по имени набора из [`KNOWN_CATEGORIES`].
 #[allow(dead_code)]
 pub fn category_file(category: &str) -> Option<&'static str> {
     match category {
@@ -121,7 +92,6 @@ pub fn category_file(category: &str) -> Option<&'static str> {
     }
 }
 
-/// Категории, которые сейчас в работе (для журнала и интерфейса).
 #[allow(dead_code)]
 pub fn categories_snapshot() -> Vec<String> {
     active_categories()
@@ -130,14 +100,10 @@ pub fn categories_snapshot() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Загружает список один раз за процесс. Повторный вызов возвращает уже загруженное число.
 pub fn init_from_file(path: &str) -> usize {
     init_from_files(&[path.to_owned()])
 }
 
-/// Загружает список из нескольких файлов: свои домены, подписки, категории. Файлы
-/// складываются в один набор, повторы отбрасываются. Работает один раз за процесс —
-/// дальше правила меняются только перезапуском туннеля.
 pub fn init_from_files(paths: &[String]) -> usize {
     if ADBLOCK_LIST.get().is_some() {
         return ADBLOCK_LIST.get().map_or(0, HashSet::len);
@@ -177,7 +143,6 @@ pub fn init_from_files(paths: &[String]) -> usize {
     count
 }
 
-/// Исключения из своих правил: строки `@@домен` (допускается `@@||домен^`).
 pub fn parse_allow_list(content: &str) -> HashSet<String> {
     let mut domains = HashSet::new();
     for line in content.lines() {
@@ -202,12 +167,10 @@ pub fn parse_allow_list(content: &str) -> HashSet<String> {
     domains
 }
 
-/// Запоминает исключения. Вызывается вместе с загрузкой списка.
 pub fn install_allow_list(domains: HashSet<String>) {
     let _ = ADBLOCK_ALLOW.set(domains);
 }
 
-/// Совпадает ли домен или один из его родителей с набором (без учёта регистра).
 fn matches_suffix(set: &HashSet<String>, domain: &str) -> bool {
     let normalized = domain.trim_end_matches('.').to_ascii_lowercase();
     if normalized.is_empty() {
@@ -225,7 +188,6 @@ fn matches_suffix(set: &HashSet<String>, domain: &str) -> bool {
     }
 }
 
-/// Дописывает в набор содержимое списка. Возвращает число новых записей.
 pub fn merge_list(target: &mut HashSet<String>, content: &str) -> usize {
     let parsed = parse_list(content);
     let before = target.len();
@@ -238,7 +200,6 @@ pub fn merge_list(target: &mut HashSet<String>, content: &str) -> usize {
     target.len().saturating_sub(before)
 }
 
-/// Запоминает, какие категории реально подключены: их же показываем пользователю.
 pub fn mark_categories<S: AsRef<str>>(categories: impl IntoIterator<Item = S>) {
     let normalized: Vec<String> = categories
         .into_iter()
@@ -249,8 +210,6 @@ pub fn mark_categories<S: AsRef<str>>(categories: impl IntoIterator<Item = S>) {
     }
 }
 
-/// Включён ли набор «Шифрованный DNS». Только тогда имеет смысл резать DoT и DoH:
-/// пока пользователь не выбрал этот набор, мы не трогаем чужие резолверы.
 pub fn encrypted_dns_blocking() -> bool {
     active_categories()
         .read()
@@ -258,7 +217,6 @@ pub fn encrypted_dns_blocking() -> bool {
         .unwrap_or(false)
 }
 
-/// Разбирает файл: по домену в строке, `#` и `!` — комментарии, hosts-строки берутся по второму полю.
 pub fn parse_list(content: &str) -> HashSet<String> {
     let mut domains = HashSet::new();
     for line in content.lines() {
@@ -305,20 +263,12 @@ fn normalize_domain(raw: &str) -> Option<String> {
     Some(domain)
 }
 
-/// Хосты, которые нужны обычной загрузке контента, даже если рекламный список
-/// их назвал. Их блокировка выглядит как «картинки и видео не грузятся».
-///
-/// `redirector.googlevideo.com` и `manifest.googlevideo.com` маршрутизируют
-/// выдачу видео: без них ролик не начинается. `youtubei.googleapis.com` — сам API
-/// YouTube, а не только его рекламный канал.
 const CONTENT_HOSTS: &[&str] = &[
     "redirector.googlevideo.com",
     "manifest.googlevideo.com",
     "youtubei.googleapis.com",
 ];
 
-/// Домен или любой его родитель есть в списке: `ads.cdn.example.com` блокируется записью `example.com`.
-/// Исключения (`@@домен`) проверяются первыми и тоже действуют на поддомены.
 pub fn is_blocked(domain: &str) -> bool {
     let Some(list) = ADBLOCK_LIST.get() else {
         return false;
@@ -329,8 +279,6 @@ pub fn is_blocked(domain: &str) -> bool {
     is_blocked_in(list, ADBLOCK_ALLOW.get(), domain)
 }
 
-/// Правило блокировки без глобального состояния: удобно проверять тестами и
-/// держать порядок проверок в одном месте.
 fn is_blocked_in(list: &HashSet<String>, allow: Option<&HashSet<String>>, domain: &str) -> bool {
     // Хосты, без которых не грузится обычный контент, не блокируются никогда.
     if matches_suffix(content_critical_set(), domain) {
@@ -349,10 +297,6 @@ pub fn is_active() -> bool {
     ADBLOCK_LIST.get().is_some_and(|list| !list.is_empty())
 }
 
-/// Домены шифрованного DNS: через них приложение может получить настоящий адрес
-/// рекламного домена в обход фильтра. DoH идёт по TCP/443 и по порту неотличим
-/// от обычного HTTPS, поэтому режем такие имена по SNI — клиент откатывается
-/// на системный DNS, а его запросы фильтр видит.
 pub fn is_encrypted_dns_host(domain: &str) -> bool {
     const ENCRYPTED_DNS: &[&str] = &[
         "dns.google",
@@ -374,15 +318,12 @@ pub fn is_encrypted_dns_host(domain: &str) -> bool {
     ENCRYPTED_DNS.contains(&domain.as_str())
 }
 
-/// DoT: шифрованный DNS поверх собственного порта.
 pub const ENCRYPTED_DNS_PORT: u16 = 853;
 
-/// Вопрос из DNS-пакета: имя, его тип и класс плюс смещение конца вопроса.
 pub struct DnsQuestion<'a> {
     pub name: String,
     pub qtype: u16,
     pub qclass: u16,
-    /// Байты вопроса (QNAME+QTYPE+QCLASS) — ответ повторяет их дословно.
     raw: &'a [u8],
 }
 
@@ -436,26 +377,13 @@ pub fn parse_question(payload: &[u8]) -> Option<DnsQuestion<'_>> {
     })
 }
 
-/// Минимальная запись SOA в конце пустого ответа.
-///
-/// Зачем она нужна: пустой ответ без единой записи часть резолверов и приложений
-/// считает «обрезанным» и повторяет вопрос. SOA с отрицательным TTL — штатный
-/// способ сказать «адреса нет, и вот сколько это действует», после него клиент
-/// не переспрашивает.
 const SINK_TTL_SECONDS: u32 = 10;
-/// Домен, который называется в SOA (владелец зоны). Значение не используется
-/// клиентом по смыслу, важно лишь, чтобы запись была корректной.
 const SINK_SOA_NAME: &[u8] = b"\x03ads\x00";
 
-/// Длина пустого ответа без записей и без SOA.
 fn empty_answer_len(question: &DnsQuestion<'_>) -> usize {
     12 + question.raw.len()
 }
 
-/// Пустой ответ NODATA на вопрос: имя «существует», но записей такого типа нет.
-///
-/// `with_soa` добавляет запись SOA в авторитетную секцию. Её стоит добавлять только
-/// для UDP: в TCP-ответе её наличие роли не играет, а длины жалко.
 pub fn build_empty_answer(
     payload: &[u8],
     question: &DnsQuestion<'_>,
@@ -515,8 +443,6 @@ pub fn build_empty_answer(
     Some(cursor)
 }
 
-/// Удобная точка входа: блокировать ли DNS-запрос и каким ответом.
-/// Возвращает длину ответа в `response` при блокировке.
 #[allow(dead_code)]
 pub fn blocked_answer_for_query(packet: &[u8], response: &mut [u8]) -> Option<(usize, String)> {
     if !is_active() {
@@ -531,7 +457,6 @@ pub fn blocked_answer_for_query(packet: &[u8], response: &mut [u8]) -> Option<(u
     Some((len, question.name))
 }
 
-/// Смещение UDP-полезной нагрузки DNS в IP-пакете, если это DNS-запрос на порт 53.
 pub fn dns_udp_payload(packet: &[u8]) -> Option<(&[u8], usize)> {
     if packet.is_empty() {
         return None;
@@ -572,18 +497,15 @@ pub fn dns_udp_payload(packet: &[u8]) -> Option<(&[u8], usize)> {
     Some((&udp[8..udp_len], ihl + 8))
 }
 
-/// Число доменов в активном списке (0, если список не загружен).
 pub fn blocked_domains_len() -> usize {
     ADBLOCK_LIST.get().map_or(0, HashSet::len)
 }
 
-/// Домены, которые пользователь добавил вручную (для проверки и подсчёта в интерфейсе).
 #[allow(dead_code)]
 pub fn blocked_domains_contains(domain: &str) -> bool {
     is_blocked(domain)
 }
 
-/// Число исключений в активном наборе.
 #[allow(dead_code)]
 pub fn allow_domains_len() -> usize {
     ADBLOCK_ALLOW.get().map_or(0, HashSet::len)

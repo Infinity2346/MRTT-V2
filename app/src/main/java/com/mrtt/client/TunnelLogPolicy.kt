@@ -8,25 +8,11 @@ object TunnelLogPolicy {
         return maxVerbose && (key.startsWith("max_step_") || key.startsWith("max_auth_diag"))
     }
 
-    /**
-     * В режиме MAX показываем весь журнал MAX без фильтров.
-     *
-     * По просьбе пользователя: нужно видеть каждый шаг (INIT, LOGIN, 158,
-     * перебор адресов), чтобы обрыв было видно сразу. Включается, когда
-     * бинарник запущен в MAX-режиме; VK-путь фильтруется как раньше.
-     */
     @Volatile
     var maxVerbose: Boolean = false
 
     fun isMaxVerboseLine(line: String): Boolean = maxVerbose && line.contains("[MAX", ignoreCase = true)
 
-    /**
-     * Строки, которые клиент пишет сам и которые не надо показывать как ошибку.
-     *
-     * `[MAX][WS] <адрес>: …` и `[MAX][TCP] <адрес>: …` — это перебор адресов,
-     * а не поломка: пока транспортов несколько, каждый неудачный адрес ничего не
-     * значит. В журнал попадёт только итоговая причина, когда не вышло совсем.
-     */
     fun isTransportAddressProbe(line: String): Boolean {
         // В MAX-режиме перебор адресов тоже нужен: именно по нему видно,
         // на каком хосте/адресе всё встало.
@@ -64,7 +50,6 @@ object TunnelLogPolicy {
             (line.contains("[КРЕД", ignoreCase = true) && line.contains("Повторяем через", ignoreCase = true))
     }
 
-    /** Ответа на запрос конфига не пришло: сессия пересоздаётся без данных. */
     fun isConfigTimeout(line: String): Boolean {
         if (!line.contains("GETCONF", ignoreCase = true)) {
             return line.contains("ответа конфига: timeout", ignoreCase = true)

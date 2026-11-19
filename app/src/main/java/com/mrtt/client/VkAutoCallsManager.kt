@@ -240,13 +240,6 @@ object VkAutoCallsManager {
     @Volatile
     private var cachedPeerId: String? = null
 
-    /**
-     * id пользователя по токену, с кешем: на одно подключение это один запрос.
-     *
-     * `null` — сеть не дала ответа, и токен тут не виноват. Раньше этот случай
-     * стирал сохранённый вход, и после переключения режимов MAX → VK аккаунт
-     * приходилось привязывать заново.
-     */
     private suspend fun peerIdForToken(token: String): String? {
         cachedPeerId?.let { cached -> if (cachedPeerIdToken == token) return cached }
         val result = withContext(Dispatchers.IO) {

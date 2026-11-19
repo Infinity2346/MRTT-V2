@@ -60,7 +60,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Запуск запроса к серверу: ошибки и успех показываются тостом, интерфейс не падает. */
 internal class ActionRunner(private val context: Context, private val scope: CoroutineScope) {
     fun run(success: String? = null, after: () -> Unit = {}, block: suspend () -> Unit) {
         scope.launch {
@@ -182,7 +181,6 @@ internal fun Context.copyToClipboard(label: String, text: String) {
     showRaisedToast("Скопировано")
 }
 
-/** Ссылка подписки или сабки: текст, QR, копирование и отправка. */
 @Composable
 internal fun LinkShareDialog(title: String, link: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -240,6 +238,5 @@ internal fun formatBytes(bytes: Long): String {
 internal fun formatDate(unixSeconds: Long): String =
     SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("ru")).format(Date(unixSeconds * 1000))
 
-/** Сколько дней осталось (0 — бессрочно), как ждёт сервер в поле days. */
 internal fun remainingDays(expires: Long): Int =
     if (expires == 0L) 0 else ((expires * 1000 - System.currentTimeMillis()).coerceAtLeast(0) / 86_400_000L + 1).toInt()

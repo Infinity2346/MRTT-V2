@@ -68,10 +68,7 @@ const MEMORY_COMPACT_INTERVAL_MS: u64 = 5_000;
 const SESSION_MAINTENANCE_INTERVAL_MS: u64 = 1_000;
 const SETUP_BUDGET_PER_TICK: usize = 1024;
 const DTLS_TABLE_LIMIT: usize = 1024;
-/// Незавершённое рукопожатие живёт столько же, сколько ждёт клиент плюс запас на повтор.
 const DTLS_HANDSHAKE_TTL_MS: u64 = 20_000;
-/// Согласованные ключи помнятся долго: пока воркер жив, он может прислать данные
-/// с того же адреса, и сервер обязан узнавать его без нового рукопожатия.
 const DTLS_NEGOTIATED_TTL_MS: u64 = 30 * 60_000;
 const UNAUTHENTICATED_SETUP_LOG_INTERVAL_MS: u64 = 10_000;
 pub(crate) static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -675,7 +672,6 @@ struct SessionEpochIdentity {
 
 const DEVICE_KEY_SEPARATOR: char = '\u{1f}';
 
-/// Ключ эпохи: у каждого устройства ссылки своя эпоха, иначе устройства вытесняют друг друга.
 pub fn epoch_key(password: &str, device_id: &str) -> String {
     if device_id.is_empty() {
         password.to_owned()
@@ -692,7 +688,6 @@ fn session_is_device(session: &Session, password: &str, device_id: &str) -> bool
     session.password == password && *lock_unpoison(&session.device_id) == device_id
 }
 
-/// device_id и имя устройства из GETCONF: только безопасные символы, чтобы не ломать формат и панель.
 fn sanitize_device_field(raw: &str, max_len: usize, allow_space: bool) -> String {
     raw.trim()
         .chars()
@@ -792,7 +787,6 @@ pub struct Session {
     pub password: String,
     pub generation_id: AtomicU64,
     pub session_salt: std::sync::Mutex<String>,
-    /// device_id из GETCONF (пусто у клиентов без поддержки устройств).
     pub device_id: std::sync::Mutex<String>,
     pub worker_id: AtomicU64,
     pub desired_stream_count: AtomicU64,
@@ -1696,7 +1690,6 @@ pub fn session_epoch_key(session: &Session) -> String {
     epoch_key(&session.password, &session_device_id(session))
 }
 
-/// Сбросить сессии одного устройства ссылки (отвязка в панели, вытеснение старого клиента).
 pub fn drop_device_sessions(app: &Arc<App>, password: &str, device_id: &str) {
     // У старых клиентов device_id в сессии пуст, а в привязке — `legacy`.
     let session_device = if device_id == crate::model::LEGACY_DEVICE_ID {

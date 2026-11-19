@@ -6,11 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Итоги тарифа и график должны показывать ТЕКУЩУЮ сессию. Раньше после
- * возврата из фона на экране висели цифры прошлого тарифа: счётчики клиента
- * начинались заново, а база отсчёта оставалась старой.
- */
 class TrafficMonitorTest {
 
     @Before

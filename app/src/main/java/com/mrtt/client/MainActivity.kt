@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -72,7 +71,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import com.mrtt.client.ui.AppUpdateDialog
 import com.mrtt.client.ui.ConnectionTab
 import com.mrtt.client.ui.ExceptionsTab
 import com.mrtt.client.ui.FloatingToolbar
@@ -86,9 +84,6 @@ import com.mrtt.client.ui.design.MrttShapes
 import com.mrtt.client.ui.dialogs.VkAuthDialog
 import com.mrtt.client.ui.dialogs.MaxAuthDialog
 import com.mrtt.client.ui.utils.parseMrttLink
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
@@ -404,11 +399,6 @@ fun MainScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var tunnelValidationRequest by rememberSaveable { mutableIntStateOf(0) }
     var wasRunning by remember { mutableStateOf(tunnelRunning) }
-    val updateCheckIntervalHours by settingsStore.updateCheckIntervalHours.collectAsStateWithLifecycle(
-        initialValue = DEFAULT_UPDATE_CHECK_INTERVAL_HOURS
-    )
-    var pendingRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
-    val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
     val safeBottomInset = with(density) { WindowInsets.safeDrawing.getBottom(density).toDp() }
     val navToolbarHeight = 66.dp
     val navToolbarBottomMargin = 10.dp
@@ -438,56 +428,6 @@ fun MainScreen(
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 3) TunnelManager.clearUnreadErrors()
-    }
-
-    LaunchedEffect(updateCheckIntervalHours) {
-        if (updateCheckIntervalHours == UPDATE_CHECK_NEVER) return@LaunchedEffect
-
-        val intervalMillis = updateIntervalHoursToMillis(updateCheckIntervalHours)
-            ?: updateIntervalHoursToMillis(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
-            ?: 12L * 60L * 60L * 1000L
-
-        suspend fun runUpdateCheck(reason: String) {
-            val checkedAt = System.currentTimeMillis()
-            val release = fetchLatestReleaseInfo(currentVersion)
-            settingsStore.saveUpdateState(
-                lastCheckAt = checkedAt,
-                latestVersion = release?.versionTag ?: "",
-                error = if (release == null) "Не удалось проверить" else ""
-            )
-
-            if (release == null) {
-                Log.w("MRTT", "[WARN] Update check: no release info, local=$currentVersion reason=$reason")
-                return
-            }
-
-            val hasUpdate = isNewerVersion(currentVersion, release.versionTag)
-            val postponeVer = settingsStore.updatePostponeVersion.first()
-            val postponeUntil = settingsStore.updatePostponeUntil.first()
-            val isPostponed = postponeVer == release.versionTag && checkedAt < postponeUntil
-            Log.i(
-                "MRTT",
-                "Update check: local=$currentVersion remote=${release.versionTag} newer=$hasUpdate postponed=$isPostponed reason=$reason"
-            )
-
-            if (hasUpdate && !isPostponed) {
-                settingsStore.saveUpdateDialogShown(release.versionTag, checkedAt)
-                pendingRelease = release
-            }
-        }
-
-        runUpdateCheck("startup")
-
-        while (isActive) {
-            val now = System.currentTimeMillis()
-            val lastCheck = settingsStore.updateLastCheckAt.first()
-            val nextCheckAt = lastCheck + intervalMillis
-            val waitMs = (nextCheckAt - now).coerceAtLeast(intervalMillis)
-            delay(waitMs)
-            if (isActive) {
-                runUpdateCheck("periodic")
-            }
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -604,38 +544,6 @@ fun MainScreen(
         }
     }
 
-    pendingRelease?.let { release ->
-        AppUpdateDialog(
-            release = release,
-            onPostpone = {
-                pendingRelease = null
-                context.showRaisedToast("Обновление отложено на 24 часа.", Toast.LENGTH_SHORT)
-                scope.launch {
-                    val now = System.currentTimeMillis()
-                    settingsStore.saveUpdatePostpone(
-                        version = release.versionTag,
-                        until = now + 24L * 60L * 60L * 1000L
-                    )
-                    settingsStore.saveUpdateDialogAction(
-                        version = release.versionTag,
-                        action = UPDATE_DIALOG_ACTION_POSTPONED,
-                        actedAt = now
-                    )
-                }
-            },
-            onUpdate = {
-                pendingRelease = null
-                scope.launch {
-                    settingsStore.saveUpdateDialogAction(
-                        version = release.versionTag,
-                        action = UPDATE_DIALOG_ACTION_UPDATE,
-                        actedAt = System.currentTimeMillis()
-                    )
-                    openReleaseUrl(context, release.releaseUrl)
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -759,13 +667,3 @@ private fun ProxyNavigationBar(
     }
 }
 
-private fun openReleaseUrl(context: Context, url: String) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-        }
-        context.startActivity(intent)
-    } catch (_: Exception) {
-        context.showRaisedToast("Не удалось открыть ссылку", Toast.LENGTH_SHORT)
-    }
-}

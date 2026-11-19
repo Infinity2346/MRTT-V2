@@ -18,7 +18,6 @@ object MrttShapes {
     val Pill = RoundedCornerShape(percent = 50)
 }
 
-/** Формы по умолчанию: стиль подменяет их через [materialShapesFor]. */
 val MrttMaterialShapes = Shapes(
     extraSmall = MrttShapes.Small,
     small = MrttShapes.Small,
@@ -27,12 +26,6 @@ val MrttMaterialShapes = Shapes(
     extraLarge = MrttShapes.Dialog,
 )
 
-/**
- * Геометрия стиля: у «Аниме» углы круглее, у «Киберпанка» — жёстче.
- *
- * Через `LocalMrttGeometry` стиль меняет не только цвет, но и форму карточек,
- * кнопок и диалогов, поэтому переключение видно сразу во всём интерфейсе.
- */
 @Immutable
 data class MrttGeometry(
     val card: CornerBasedShape,
@@ -48,7 +41,6 @@ val MrttDefaultGeometry = MrttGeometry(
     small = MrttShapes.Small,
 )
 
-/** Стиль «Аниме»: крупные мягкие скругления. */
 val MrttSoftGeometry = MrttGeometry(
     card = RoundedCornerShape(34.dp),
     control = RoundedCornerShape(percent = 50),
@@ -56,7 +48,6 @@ val MrttSoftGeometry = MrttGeometry(
     small = RoundedCornerShape(22.dp),
 )
 
-/** Стиль «Киберпанк»: срезанные углы, как на неоновых вывесках. */
 val MrttSharpGeometry = MrttGeometry(
     card = RoundedCornerShape(10.dp),
     control = RoundedCornerShape(10.dp),
@@ -64,7 +55,6 @@ val MrttSharpGeometry = MrttGeometry(
     small = RoundedCornerShape(8.dp),
 )
 
-/** Стиль «Пузырь»: очень круглые карточки и диалоги, как у мягких игрушек. */
 val MrttBubbleGeometry = MrttGeometry(
     card = RoundedCornerShape(40.dp),
     control = RoundedCornerShape(percent = 50),
@@ -72,7 +62,6 @@ val MrttBubbleGeometry = MrttGeometry(
     small = RoundedCornerShape(26.dp),
 )
 
-/** Стиль «Чёткий»: аккуратные средние углы, строго и современно. */
 val MrttCrispGeometry = MrttGeometry(
     card = RoundedCornerShape(18.dp),
     control = RoundedCornerShape(14.dp),
@@ -80,7 +69,6 @@ val MrttCrispGeometry = MrttGeometry(
     small = RoundedCornerShape(12.dp),
 )
 
-/** Стиль «Скос»: срезанные углы, как у техники будущего. */
 val MrttBevelGeometry = MrttGeometry(
     card = androidx.compose.foundation.shape.CutCornerShape(topStart = 22.dp, bottomEnd = 22.dp, topEnd = 4.dp, bottomStart = 4.dp),
     control = androidx.compose.foundation.shape.CutCornerShape(topStart = 14.dp, bottomEnd = 14.dp, topEnd = 3.dp, bottomStart = 3.dp),
@@ -90,7 +78,6 @@ val MrttBevelGeometry = MrttGeometry(
 
 val LocalMrttGeometry = staticCompositionLocalOf { MrttDefaultGeometry }
 
-/** Формы Material из геометрии стиля. */
 fun materialShapesFor(geometry: MrttGeometry): Shapes = Shapes(
     extraSmall = geometry.small,
     small = geometry.small,
@@ -101,12 +88,6 @@ fun materialShapesFor(geometry: MrttGeometry): Shapes = Shapes(
 
 private val currentGeometry = mutableStateOf(MrttDefaultGeometry)
 
-/**
- * Формы текущего стиля — доступны и из разметки, и из обычных функций.
- *
- * Значение обновляет `MrttAppTheme` при смене стиля; читающие компоненты
- * перерисовываются сами.
- */
 object MrttStyleShapes {
     val geometry: MrttGeometry
         get() = currentGeometry.value

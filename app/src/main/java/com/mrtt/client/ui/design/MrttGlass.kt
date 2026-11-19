@@ -12,13 +12,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
-/**
- * Стеклянная поверхность: полупрозрачное тело, блик сверху и тонкий ободок.
- *
- * Цвета берутся из схемы стиля, а не из чистого белого: в светлых стилях
- * стекло не сливается с белым фоном (раньше кнопки были «белые на белом»),
- * а в цветных стилях подкрашивается акцентом.
- */
 @Composable
 fun Modifier.mrttGlass(shape: Shape, tint: Color? = null): Modifier {
     val scheme = MaterialTheme.colorScheme

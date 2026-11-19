@@ -1,13 +1,3 @@
-//! Транспорт MAX (web.max.ru / oneme).
-//!
-//! MAX едет на том же Calls-бэкенде, что и VK (`https://calls.okcdn.ru/fb.do`,
-//! методы `auth.anonymLogin` / `vchat.*`). Отличия:
-//!   1. application_key: `CNHIJPLGDIHBABABA` (у VK — `CGMMEJLGDIHBABABA`);
-//!   2. call_token — через WS `wss://ws-api.oneme.ru/websocket` (INIT → LOGIN → 158);
-//!   3. звонок создаётся внутри группы: `payload.chat_id`.
-//!
-//! Брокер и «создатель звонка» переиспользуются из `vk_js_calls` с бэкендом
-//! `CallBackend::Max`.
 
 use crate::max_tcp;
 use crate::profiles::Profile;
@@ -26,20 +16,13 @@ use uuid::Uuid;
 pub const MAX_API_KEY: &str = "CNHIJPLGDIHBABABA";
 pub const ONEME_WS_URL: &str = "wss://ws-api.oneme.ru/websocket";
 pub const MAX_APP_VERSION: &str = "26.10.3";
-/// Сколько раз пробуем открыть WS-сессию MAX при таймауте/обрыве сети.
 const WS_CONNECT_ATTEMPTS: usize = 2;
-/// Таймаут на ОДИН адрес: адресов несколько (IPv4/IPv6, два хоста), поэтому
-/// держим его коротким — иначе перебор занимает минуты.
 const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
-/// Общий бюджет на все WS-попытки. Перебор адресов без него превращается в
-/// минуты ожидания на заблокированном хосте. Рядом параллельно идёт транспорт
-/// приложения, так что бюджет короткий.
 const WS_TOTAL_BUDGET: Duration = Duration::from_secs(10);
 const WS_RETRY_DELAY: Duration = Duration::from_millis(700);
 pub const MAX_CALLS_API: &str = "https://calls.okcdn.ru/fb.do";
 pub const MAX_ORIGIN: &str = "https://web.max.ru";
 
-/// Открыть сессию Calls-бэкенда для MAX: WS-логин oneme → auth.anonymLogin.
 pub(crate) async fn open_max_session(
     client: &Client,
     access_token: &str,
@@ -80,8 +63,6 @@ pub(crate) async fn open_max_session(
     })
 }
 
-/// Старт MAX-транспорта: создаём звонок в группе и удерживаем его
-/// (аналог `vk_js_calls::start`, но без join-хеша).
 pub async fn start(
     bootstrap: Bootstrap,
     group_ids: &[String],
@@ -199,14 +180,6 @@ pub async fn start(
     })
 }
 
-/// Получить call_token: оба транспорта MAX идут параллельно.
-///
-/// Раньше пути шли по очереди: сначала web (до 20 секунд перебора адресов),
-/// потом приложение. На телефоне, где `ws-api.oneme.ru` закрыт, это значило
-/// «включил туннель — 20 секунд ничего не происходит», а если web-хост вёл
-/// себя хуже (соединение открывалось, а рукопожатие молчало) — MAX не
-/// поднимался вовсе. Теперь оба пути стартуют одновременно, берётся первый
-/// успешный, и всё это укладывается в один короткий бюджет.
 async fn fetch_call_token(access_token: &str, device_id: &str) -> Result<String> {
     // Токен веб-сессии приложение-протокол не принимает (`login.cred`), а
     // именно его отдаёт привязка через web.max.ru. Раньше TCP шёл первым,
@@ -267,13 +240,6 @@ async fn fetch_call_token(access_token: &str, device_id: &str) -> Result<String>
     }
 }
 
-/// deviceId для сессии MAX.
-///
-/// Берём тот, что сохранён вместе с токеном (страница web.max.ru): сервер
-/// MAX привязывает токен к устройству и на новый UUID отвечает `login.cred` /
-/// `FAIL_WRONG_PASSWORD`. Если привязка старая и deviceId не сохранён —
-/// генерируем, но предупреждаем в журнале: это ровно тот случай, когда
-/// пользователю нужно один раз войти в MAX заново.
 fn bootstrap_device_id(from_bootstrap: &str) -> String {
     let trimmed = from_bootstrap.trim();
     if !trimmed.is_empty() && trimmed.len() <= 64 && !trimmed.chars().any(char::is_whitespace) {
@@ -303,7 +269,6 @@ fn parse_transport(raw: &str) -> Option<MaxTransport> {
     }
 }
 
-/// call_token через WS-протокол oneme (INIT → LOGIN → 158).
 async fn fetch_call_token_ws(access_token: &str, device_id: &str) -> Result<String> {
     // WS MAX — единственное место, где нужен живой web.max.ru. При звонке, смене
     // сети или на слабом канале соединение не успевает за 10 с, и раньше это
@@ -333,8 +298,6 @@ async fn fetch_call_token_ws(access_token: &str, device_id: &str) -> Result<Stri
         .context("MAX WS call token")
 }
 
-/// Таймаут на соединение можно поднять переменной окружения: на медленной сети
-/// 20 секунд мало, а ждать дольше в тестах не нужно.
 fn mrtt_env_duration(name: &str) -> Option<u64> {
     std::env::var(name).ok()?.trim().parse::<u64>().ok().filter(|value| *value > 0)
 }
@@ -403,7 +366,6 @@ fn ws_request() -> Result<tokio_tungstenite::tungstenite::handshake::client::Req
     Ok(request)
 }
 
-/// Один адрес: TCP + TLS + WebSocket-рукопожатие под общим таймаутом.
 async fn connect_ws_at(
     request: &tokio_tungstenite::tungstenite::handshake::client::Request,
     address: std::net::IpAddr,
@@ -429,8 +391,6 @@ async fn connect_ws_at(
     Ok(stream)
 }
 
-/// IPv4 первыми: IPv6 у мобильных операторов часто «есть», но маршрута нет,
-/// и подключение молча висит до таймаута (ровно `os error 110`).
 fn prefer_ipv4(addresses: Vec<std::net::IpAddr>) -> Vec<std::net::IpAddr> {
     let mut sorted = addresses;
     sorted.sort_by_key(|address| if address.is_ipv4() { 0 } else { 1 });
@@ -438,12 +398,8 @@ fn prefer_ipv4(addresses: Vec<std::net::IpAddr>) -> Vec<std::net::IpAddr> {
     sorted
 }
 
-/// Хосты WS-сигналинга MAX, в порядке предпочтения: основной и запасные имена
-/// того же кластера. Если оператор режет `ws-api`, пробуем соседние имена.
 const WS_HOSTS: [&str; 2] = ["ws-api.oneme.ru", "ws-api.max.ru"];
 
-/// Адреса хоста через штатный резолвер клиента (системный DNS, затем известные
-/// серверы по DoU, с кэшем).
 async fn resolve_host(host: &str) -> Result<Vec<std::net::IpAddr>> {
     crate::dns::global()
         .lookup(host)

@@ -39,7 +39,6 @@ internal fun AppBackdrop(
     }
 }
 
-/** Не используется напрямую, но оставлен для предпросмотра фона в дизайне. */
 @Composable
 internal fun AppBackdropPreview(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))

@@ -1,6 +1,3 @@
-//! Ping through the tunnel. The app's own UID is excluded from its VPN, so an HTTP request from Kotlin never touches the
-//! tunnel. Instead the client itself sends a TCP SYN along the worker path to the host of the ping URL and times the answer:
-//! it proves the whole way, phone to carrier to server to the internet, and needs nothing new on the server.
 
 use std::net::Ipv4Addr;
 use std::sync::Mutex;
@@ -21,7 +18,6 @@ pub struct Target {
     pub seq: u32,
 }
 
-/// `<tunnel ip>|<target ip>|<port>` from the app; the port and sequence of the probe come from `nonce`.
 pub fn parse_command(spec: &str, nonce: u32) -> Option<Target> {
     let mut parts = spec.split('|');
     let src = parts.next()?.trim().parse().ok()?;
@@ -79,12 +75,10 @@ pub fn syn_packet(target: &Target) -> [u8; PACKET_LEN] {
     tcp_packet(target, SYN, target.seq)
 }
 
-/// Closes the half-open connection on the far side.
 pub fn rst_packet(target: &Target) -> [u8; PACKET_LEN] {
     tcp_packet(target, RST, target.seq.wrapping_add(1))
 }
 
-/// The target's answer to our SYN: SYN+ACK, or RST when the port is closed, which still proves the path.
 fn is_answer(packet: &[u8], target: &Target) -> bool {
     if packet.len() < 20 || packet[0] >> 4 != 4 || packet[9] != 6 {
         return false;
@@ -103,7 +97,6 @@ fn is_answer(packet: &[u8], target: &Target) -> bool {
     acked && (flags & (SYN | ACK) == SYN | ACK || flags & RST != 0)
 }
 
-/// The probe in flight; a new one replaces it. The downlink checks only one relaxed flag while nothing is in flight.
 #[derive(Default)]
 pub struct Slot {
     active: AtomicBool,
@@ -127,7 +120,6 @@ impl Slot {
         }
     }
 
-    /// True when `packet` is the answer: it is ours and must not reach the TUN.
     pub fn intercept(&self, packet: &[u8]) -> bool {
         if !self.active.load(Ordering::Relaxed) {
             return false;

@@ -3,29 +3,14 @@ package com.mrtt.client
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Adblock в приложении: свои домены, свои ссылки-подписки и готовые категории правил
- * в духе geosite (`geosite-category-ru@ads`, `@telemetry`, `@cn`).
- *
- * Здесь только чистая логика без Android API — разбор строк, нормализация доменов,
- * сборка текста правил и разбор JSON категорий. Файлы и сеть лежат в
- * `AdblockRepository`, поэтому всё это проверяется юнит-тестами.
- */
 internal object AdblockPolicy {
 
-    /** Откуда берётся набор: встроенный снимок в APK или файл из обновления. */
     enum class CategorySource {
-        /** Снимок лежит в APK: работает без сети и не зависит от GitHub. */
         BuiltIn,
 
-        /** Полный набор из MetaCubeX/meta-rules-dat: скачивается обновлением. */
         GeositeRemote,
     }
 
-    /**
-     * Категории рекламы и трекеров. Здесь не только российские наборы: в жизни
-     * реклама приходит и с глобальных сетей, и от конкретных сервисов.
-     */
     val KNOWN_CATEGORIES: List<Category> = listOf(
         Category(
             id = "geosite-category-ads-all",
@@ -110,7 +95,6 @@ internal object AdblockPolicy {
         ),
     )
 
-    /** Порядок и подписи групп: интерфейс идёт сверху вниз именно так. */
     enum class CategoryGroup(val title: String, val hint: String) {
         Global(
             "Для всех",
@@ -126,26 +110,18 @@ internal object AdblockPolicy {
         ),
     }
 
-    /** Группы категорий в порядке интерфейса. */
     fun categoriesByGroup(): List<Pair<CategoryGroup, List<Category>>> =
         CategoryGroup.entries.map { group -> group to KNOWN_CATEGORIES.filter { it.group == group } }
 
-    /** Категории, которые обновляются из MetaCubeX/meta-rules-dat. */
     val UPDATABLE_CATEGORIES: List<Category> =
         KNOWN_CATEGORIES.filter { it.source == CategorySource.GeositeRemote }
 
     fun categoryById(id: String): Category? = KNOWN_CATEGORIES.firstOrNull { it.id == id }
 
-    /** Сколько строк правил держим в пользовательском наборе, чтобы запуск не тормозил. */
     const val MAX_USER_DOMAINS: Int = 200_000
 
-    /** Сколько подписок принимаем (защита от случайной свалки ссылок). */
     const val MAX_SUBSCRIPTIONS: Int = 32
 
-    /**
-     * Block — домен получает локальный пустой ответ (реклама и трекеры режутся),
-     * Allow — исключение: домен открывается как обычно, даже если попал в список.
-     */
     enum class RuleKind { Block, Allow }
 
     enum class SubscriptionKind { Plain, Geosite }
@@ -154,14 +130,11 @@ internal object AdblockPolicy {
         val id: String,
         val title: String,
         val description: String,
-        /** Файл в ассетах или в `filesDir` — имя одно и то же. */
         val assetFile: String,
         val group: CategoryGroup = CategoryGroup.Global,
         val source: CategorySource = CategorySource.BuiltIn,
-        /** Сколько доменов примерно: показываем до первого чтения файла. */
         val approxDomains: Int = 0,
     ) {
-        /** Имя файла в MetaCubeX: `geosite-category-ru@ads` → `category-ru@ads`. */
         val geositeName: String get() = id.removePrefix("geosite-")
     }
 
@@ -170,18 +143,12 @@ internal object AdblockPolicy {
         val kind: RuleKind,
     )
 
-    /** Подписка: адрес списка в сети и подпись, чтобы человек помнил, что это. */
     data class Subscription(
         val url: String,
         val title: String = "",
         val enabled: Boolean = true,
     )
 
-    /**
-     * Приводит имя категории к каноническому виду. Понимает `ads`, `ru@ads`,
-     * `category-ru@ads`, `geosite-category-ru@ads` — всё это одна категория.
-     * Неизвестный набор возвращает null, чтобы не включить «что-то не то».
-     */
     fun normalizeCategory(raw: String): String? {
         var name = raw.trim().lowercase()
         if (name.isEmpty()) return null
@@ -210,23 +177,16 @@ internal object AdblockPolicy {
         }
     }
 
-    /** Включённые категории в порядке интерфейса: так `--adblock-category` стабилен. */
     fun categoryIds(raw: Collection<String>): List<String> {
         val normalized = raw.mapNotNull { normalizeCategory(it) }.toSet()
         return KNOWN_CATEGORIES.map { it.id }.filter { it in normalized }
     }
 
-    /** Все включённые категории в том порядке, в каком они есть в интерфейсе. */
     fun enabledCategories(raw: Collection<String>): List<Category> {
         val ids = categoryIds(raw).toSet()
         return KNOWN_CATEGORIES.filter { it.id in ids }
     }
 
-    /**
-     * Домен из строки пользователя. Принимает `example.com`, `*.example.com`,
-     * `https://example.com/path?x=1`, `||example.com^` (ABP), `0.0.0.0 example.com`
-     * (hosts), `example.com:8080`. Возвращает null, если домена не видно.
-     */
     fun parseDomain(raw: String): String? {
         var value = raw.trim()
         if (value.isEmpty() || value.startsWith("#") || value.startsWith("!")) return null
@@ -257,10 +217,6 @@ internal object AdblockPolicy {
         return value
     }
 
-    /**
-     * Разбирает многострочный текст в правила. Поддерживает и «свои домены», и
-     * правило-исключение с префиксом `@@` (как в AdGuard/ABP).
-     */
     fun parseRules(text: String, kind: RuleKind = RuleKind.Block): List<DomainRule> {
         val seen = HashSet<String>()
         val rules = ArrayList<DomainRule>()
@@ -279,7 +235,6 @@ internal object AdblockPolicy {
         return rules
     }
 
-    /** Обратная сборка: текст правил из сохранённого списка (одно правило в строке). */
     fun rulesToText(rules: List<DomainRule>): String = rules.joinToString("\n") { rule ->
         when (rule.kind) {
             RuleKind.Block -> rule.domain
@@ -287,19 +242,12 @@ internal object AdblockPolicy {
         }
     }
 
-    /** Домены блокировки из списка правил (без исключений) — их отдаём клиенту. */
     fun blockDomains(rules: List<DomainRule>): List<String> =
         rules.filter { it.kind == RuleKind.Block }.map { it.domain }.distinct()
 
-    /** Домены-исключения. */
     fun allowDomains(rules: List<DomainRule>): List<String> =
         rules.filter { it.kind == RuleKind.Allow }.map { it.domain }.distinct()
 
-    /**
-     * Ссылка на список трекеров -> адрес, который можно скачать. Понимает `http(s)://…`,
-     * `abp://…` (AdGuard), `domains://…` и просто домен, вставленный как ссылка
-     * (`doubleclick.net`): тогда считаем, что это `https://doubleclick.net/`.
-     */
     fun normalizeSubscriptionUrl(raw: String): String? {
         val value = raw.trim()
         if (value.isEmpty() || value.startsWith("#") || value.startsWith("!")) return null
@@ -317,20 +265,11 @@ internal object AdblockPolicy {
         return candidate.takeIf { it.length in 8..2048 }
     }
 
-    /**
-     * Что делать со скачанным файлом: обычный список доменов или JSON `geosite`
-     * (формат MetaCubeX/meta-rules-dat, ветка sing).
-     */
     fun extractDomainsFromPayload(payload: String, kind: SubscriptionKind): String = when (kind) {
         SubscriptionKind.Plain -> payload
         SubscriptionKind.Geosite -> geositeJsonToDomains(payload)
     }
 
-    /**
-     * Понимает JSON категории geosite (`{"rules":[{"domain":[...],"domain_suffix":[...]}]}`).
-     * Имена без точки (`ru`, `yandex`) отбрасываются: иначе одной записью заблокировали
-     * бы целую зону.
-     */
     fun geositeJsonToDomains(payload: String): String {
         val text = payload.trim()
         if (!text.startsWith("{")) return payload
@@ -354,10 +293,6 @@ internal object AdblockPolicy {
         return domains.joinToString("\n")
     }
 
-    /**
-     * Текст правил для файла, который читает клиент: свои домены (с исключениями)
-     * и содержимое подписок. Категории идут отдельными файлами, их сюда не пишем.
-     */
     fun rulesText(rules: List<DomainRule>, subscriptionTexts: List<String>): String {
         val builder = StringBuilder()
         for (rule in rules) {
@@ -375,7 +310,6 @@ internal object AdblockPolicy {
         return builder.toString()
     }
 
-    /** Короткая подпись для карточки в интерфейсе. */
     fun summary(
         rules: List<DomainRule>,
         subscriptions: List<Subscription>,
@@ -393,7 +327,6 @@ internal object AdblockPolicy {
         return parts.joinToString(" · ")
     }
 
-    /** Сохранение в настройки: подписки уходят JSON-массивом. */
     fun subscriptionsToJson(subscriptions: List<Subscription>): String {
         val array = JSONArray()
         for (item in subscriptions.take(MAX_SUBSCRIPTIONS)) {

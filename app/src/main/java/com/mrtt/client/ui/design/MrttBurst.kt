@@ -15,10 +15,6 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-/**
- * Всплеск частиц при нажатии: у аниме разлетаются лепестки, у «Сладкой ваты» — сердечки,
- * у киберпанка — глитч-квадраты, у океана — пузырьки. В монохроме эффекта нет.
- */
 @Composable
 fun Modifier.mrttBurst(pressed: Boolean): Modifier {
     // Анимация запускается только на нажатие и заканчивается сама; после

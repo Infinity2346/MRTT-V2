@@ -5,11 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Три состояния приложения: в туннеле → свой интернет напрямую → свой интернет
- * с фильтром рекламы. Проверяем переключение и то, что приложение не остаётся сразу в
- * двух списках — иначе Android и клиент поняли бы его по-разному.
- */
 class AppRoutingTest {
     @Test
     fun tap_cycles_tunnel_direct_filtered() {

@@ -1,6 +1,5 @@
 #![allow(linker_messages)]
 
-/// Порты служебных сервисов MRTT-сервера: панель управления, деплой и SSH.
 pub struct MrttPorts;
 
 impl MrttPorts {
@@ -95,14 +94,7 @@ use wrap::derive_wrap_key;
 const EXIT_NORMAL: i32 = 0;
 const EXIT_FATAL: i32 = 1;
 const EXIT_TUN_LOST: i32 = 3;
-/// Токен аккаунта VK/MAX больше не принимается: приложение должно взять свежий
-/// токен из сохранённой сессии и перезапустить клиент. Это не «авария» и не
-/// повод показывать «Rust-клиент завершился (код 1)».
 const EXIT_AUTH_EXPIRED: i32 = 4;
-/// Не дотянулись до сети, где живёт транспорт (MAX WS, VK bootstrap): телефон
-/// звонил, сеть пропала или канал медленный. Это не поломка клиента и не повод
-/// писать «Rust-клиент завершился (код 1). Перезапуск…»: приложение просто
-/// переподключается, когда сеть есть.
 const EXIT_NETWORK_RETRY: i32 = 5;
 const MAX_VK_HASHES: usize = 6;
 pub const MAX_WORKERS: usize = 100;
@@ -127,7 +119,6 @@ struct Arguments {
     // MAX group IDs may be negative; clap must accept -123 as a value.
     #[arg(long, default_value = "", allow_hyphen_values = true)]
     max: String,
-    /// Jitsi room `host/room` of the server: every worker is a guest there and talks to the server's seats.
     #[arg(long, default_value = "")]
     jitsi: String,
     #[arg(long, default_value = "manual")]
@@ -148,7 +139,6 @@ struct Arguments {
     client_ids: String,
     #[arg(long, default_value = "unified")]
     obfs: String,
-    /// Скрывать трафик туннеля: пакеты выглядят как медиа-поток звонка.
     #[arg(long, default_value_t = false)]
     stealth: bool,
     #[arg(long, default_value = "udp")]
@@ -183,43 +173,30 @@ struct Arguments {
     direct_ips: String,
     #[arg(long = "exact-workers", default_value_t = false)]
     exact_workers: bool,
-    /// DNS-фильтр рекламы и трекеров: домены из файла получают локальный пустой ответ.
     #[arg(long = "adblock", default_value_t = false)]
     adblock: bool,
-    /// Игровой режим: каждый поток закрепляется за одним воркером (без переупорядочивания).
     #[arg(long = "game-mode", default_value_t = false)]
     game_mode: bool,
-    /// Порты игр через запятую или диапазоном: на них игровой режим включается сам.
     #[arg(long = "game-ports", default_value = "")]
     game_ports: String,
-    /// Адреса своих серверов через запятую: их трафик всегда идёт в туннель.
     #[arg(long = "protected-ips", default_value = "")]
     protected_ips: String,
-    /// Файл списка блокировки (по одному домену в строке, hosts-формат тоже подходит).
     #[arg(long = "adblock-file", default_value = "")]
     adblock_file: String,
-    /// Дополнительные файлы правил: свои домены пользователя и скачанные подписки.
-    /// Можно указать несколько раз.
     #[arg(long = "adblock-rules")]
     adblock_rules: Vec<String>,
-    /// Категории правил в духе geosite (`geosite-category-ru@ads`, `@telemetry`, `@cn`).
-    /// Через запятую или несколько раз.
     #[arg(long = "adblock-category", default_value = "")]
     adblock_category: String,
-    /// Домены российских сервисов (geosite-category-ru): их трафик идёт напрямую.
     #[arg(long = "ru-domains-file")]
     ru_domains_file: Vec<String>,
-    /// On a VPS as the exit of a cascade: the TUN to open once the server has assigned an address.
     #[arg(long = "exit-tun", default_value = "")]
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     exit_tun: String,
-    /// Run with the assigned address, after the TUN exists and before traffic starts.
     #[arg(long = "exit-hook", default_value = "")]
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     exit_hook: String,
 }
 
-/// Round trip of a DTLS ClientHello straight to the server's UDP port: an answer means MRTT is alive there.
 fn probe_peer(address: &str) -> Option<u64> {
     let peer: std::net::SocketAddr = address.parse().ok()?;
     let socket = std::net::UdpSocket::bind(if peer.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" }).ok()?;
@@ -345,14 +322,6 @@ fn runtime_worker_threads_with_limit(
         .clamp(1, available)
 }
 
-/// Ошибка старта звонка: мёртвый токен аккаунта — не авария клиента.
-///
-/// После входящего звонка или паузы без интернета VK отвечает
-/// «User authorization failed» (`error_code=5`). Раньше это уходило в `[ФАТАЛ]`
-/// и процесс завершался с кодом 1, а приложение перезапускало его с тем же
-/// токеном по кругу — отсюда и «выключите и включите VPN». Теперь такой ответ
-/// превращается в отдельное событие и код [EXIT_AUTH_EXPIRED]: приложение само
-/// возьмёт свежий токен из сохранённой сессии и переподключится.
 fn auth_error_or_fatal(error: anyhow::Error) -> anyhow::Error {
     // MAX отвечает `login.cred` / `FAIL_WRONG_PASSWORD`, когда сохранённый токен
     // больше не действует. Это не «авария» и не «сеть»: токен надо обновить.
@@ -401,10 +370,6 @@ fn auth_error_or_fatal(error: anyhow::Error) -> anyhow::Error {
     }
 }
 
-/// Сетевая, а не логическая ошибка: до сервера не дошли.
-///
-/// Так уходит `MAX WS connect timeout: deadline has elapsed`, обрывы TLS и
-/// «нет маршрута». Их лечит время и повтор, а не новый токен и не «авария».
 fn is_network_transient(error: &anyhow::Error) -> bool {
     let mut text = String::new();
     for cause in error.chain() {
@@ -452,7 +417,6 @@ fn is_network_transient(error: &anyhow::Error) -> bool {
     .any(|marker| lowered.contains(marker))
 }
 
-/// MAX отверг токен (`login.cred` / `FAIL_WRONG_PASSWORD`): нужен новый вход.
 #[derive(Debug)]
 struct MaxTokenRejected;
 
@@ -467,7 +431,6 @@ impl std::fmt::Display for MaxTokenRejected {
 
 impl std::error::Error for MaxTokenRejected {}
 
-/// Токен аккаунта VK/MAX отвергнут: нужен новый, повторы с ним бессмысленны.
 #[derive(Debug)]
 struct AuthExpired {
     code: i64,
@@ -976,9 +939,6 @@ fn normalized_arguments() -> Vec<String> {
     std::env::args().map(normalize_cli_argument).collect()
 }
 
-/// Ключи, которые Android присылает с одним дефисом. Держим списком, а не
-/// регуляркой: значения вроде `-Wabc` (хеш VK) начинаются с дефиса, и правило
-/// «два дефиса = длинный ключ» превратило бы их в ошибку разбора.
 const ANDROID_LONG_FLAGS: &[&str] = &[
     "turn",
     "custom-turn-ips",
@@ -1185,7 +1145,6 @@ async fn run_vk_hash_validation(arguments: &Arguments) -> Result<()> {
     Ok(())
 }
 
-/// Убирает строки-комментарии (`#`, `!`) из файла списка доменов.
 fn strip_comments(content: &str) -> String {
     content
         .lines()
@@ -1197,8 +1156,6 @@ fn strip_comments(content: &str) -> String {
         .join("\n")
 }
 
-/// Адреса своих серверов из приложения: по ним трафик идёт в туннель, даже если
-/// адрес случайно попал в исключения (иначе панель управления недоступна).
 fn parse_protected_ips(raw: &str) -> std::collections::HashSet<std::net::IpAddr> {
     raw.split(|c: char| c == ',' || c == ';' || c.is_whitespace())
         .filter_map(|token| {

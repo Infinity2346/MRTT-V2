@@ -208,7 +208,6 @@ private fun readableFileSize(bytes: Long): String = when {
     else -> "$bytes Б"
 }
 
-/** Одна установка или удаление: ход отдельно для сервера, в журнале каждая строка подписана его адресом. */
 internal class DeployRun(private val id: String, private val host: String, private val token: Long = 0L) {
     fun progress(value: Float, step: String) = DeployManager.updateProgress(id, token, value, step)
     fun session(session: java.io.Closeable?) = DeployManager.setSession(id, token, session)
@@ -780,7 +779,6 @@ internal suspend fun performUninstall(
     }
 }
 
-/** Выход каскада на сервере [from]: что сохранить в его настройках. */
 internal data class CreatedExit(val id: String, val table: Int, val remotePassword: String)
 
 private class CascadeHost(private val context: Context, private val server: com.mrtt.client.servers.VpsServer) : java.io.Closeable {
@@ -788,7 +786,6 @@ private class CascadeHost(private val context: Context, private val server: com.
     private val ssh = createSSHClient(context, server.host, server.sshUser, server.sshPassword, server.sshPort, server.sshPrivateKey, server.sshKeyPassphrase)
     private val client = DeploySSHClient(ssh, server.sshPassword, DeployRun("", server.host))
 
-    /** Строка ответа с маркером [marker], разбитая на слова. */
     fun run(marker: String, vararg args: String): List<String> {
         val quoted = args.joinToString(" ") { shellQuote(it) }
         val result = client.execResult(rootCommand("set -- $quoted\n$script", server.sshPassword), 180_000L)
@@ -800,7 +797,6 @@ private class CascadeHost(private val context: Context, private val server: com.
         return line.split(' ')
     }
 
-    /** Кладёт на сервер клиент каскада под его архитектуру. */
     fun uploadExitClient() {
         val machine = client.exec("uname -m", 30_000L).trim()
         val asset = when (machine) {
@@ -828,7 +824,6 @@ private class CascadeHost(private val context: Context, private val server: com.
     }
 }
 
-/** Подключает [from] к [to] как обычный конфиг и проверяет, что адрес выдан; при ошибке за собой всё убирает. */
 internal suspend fun setupExit(
     context: Context,
     from: com.mrtt.client.servers.VpsServer,
@@ -859,7 +854,6 @@ internal suspend fun setupExit(
     }
 }
 
-/** Убирает клиент и конфиг на выходе; недоступный или уже удалённый выход не мешает убрать его здесь. */
 internal suspend fun removeExit(
     context: Context,
     from: com.mrtt.client.servers.VpsServer,

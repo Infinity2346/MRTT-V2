@@ -11,7 +11,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** VPS, которым управляет приложение: SSH-доступ для деплоя и для API управления. */
 internal data class VpsServer(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "",
@@ -51,11 +50,6 @@ internal class ServerRepository(context: Context) {
         refreshOwnIps()
     }
 
-    /**
-     * Кэширует IPv4-адреса своих серверов в настройках: клиент и VPN берут их
-     * без ожидания DNS, а их трафик всегда идёт в туннель (даже если адрес
-     * оказался в списке исключений). Пустой список, если имена ещё не разрешились.
-     */
     suspend fun refreshOwnIps() {
         val ips = current()
             .flatMap { server ->
@@ -71,7 +65,6 @@ internal class ServerRepository(context: Context) {
         store.saveOwnServerIps(ips.joinToString(","))
     }
 
-    /** Один раз переносит старые настройки деплоя (слоты профилей) в список серверов. */
     suspend fun migrateLegacy() {
         if (store.vpsServersMigrated()) return
         val legacy = store.legacyDeployServers().map { snapshot ->

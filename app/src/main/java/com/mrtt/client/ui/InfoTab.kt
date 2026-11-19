@@ -64,7 +64,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,13 +85,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mrtt.client.BuildConfig
 import com.mrtt.client.R
 import com.mrtt.client.SettingsStore
-import com.mrtt.client.UPDATE_DIALOG_ACTION_POSTPONED
-import com.mrtt.client.UPDATE_DIALOG_ACTION_UPDATE
 import com.mrtt.client.MrttColors
-import com.mrtt.client.displayVersion
-import com.mrtt.client.fetchLatestReleaseInfo
-import com.mrtt.client.isNewerVersion
-import kotlinx.coroutines.launch
 import com.mrtt.client.ui.components.MrttScreen
 import com.mrtt.client.ui.design.MrttSpacing
 import com.mrtt.client.ui.dialogs.CryptoDonateDialog
@@ -152,25 +145,8 @@ fun InfoTab(
     onProjectToggle: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
-    var isCheckingUpdates by remember { mutableStateOf(false) }
-    var pendingManualRelease by remember { mutableStateOf<com.mrtt.client.AppReleaseInfo?>(null) }
     var showCryptoDialog by remember { mutableStateOf(false) }
-    val updateLatestVersion by settingsStore.updateLatestVersion.collectAsStateWithLifecycle(initialValue = "")
-    val updateLastError by settingsStore.updateLastError.collectAsStateWithLifecycle(initialValue = "")
-    val updateStatus = remember(isCheckingUpdates, updateLatestVersion, updateLastError, currentVersion) {
-        val latest = displayVersion(updateLatestVersion)
-        when {
-            isCheckingUpdates -> "Проверяем GitHub releases..."
-            updateLatestVersion.isNotBlank() && isNewerVersion(currentVersion, updateLatestVersion) ->
-                "На GitHub доступна версия $latest"
-            updateLatestVersion.isNotBlank() -> "Последняя версия: $latest · у вас столько же"
-            updateLastError.isNotBlank() -> "Последняя проверка завершилась ошибкой"
-            else -> "Проверить GitHub вручную"
-        }
-    }
-
     MrttScreen {
         Column(
             modifier = Modifier
@@ -236,87 +212,6 @@ fun InfoTab(
                 )
             }
 
-            WideActionTile(
-                title = "Проверить обновления",
-                subtitle = updateStatus,
-                onClick = {
-                    if (isCheckingUpdates) return@WideActionTile
-                    isCheckingUpdates = true
-                    scope.launch {
-                        val checkedAt = System.currentTimeMillis()
-                        val release = fetchLatestReleaseInfo(currentVersion)
-                        val latest = release?.versionTag
-                        settingsStore.saveUpdateState(
-                            lastCheckAt = checkedAt,
-                            latestVersion = latest ?: "",
-                            error = if (release == null) "Не удалось проверить" else ""
-                        )
-                        isCheckingUpdates = false
-
-                        if (release == null) {
-                            val message = if (updateLatestVersion.isNotBlank()) {
-                                "Не удалось проверить. Последняя известная версия: $updateLatestVersion"
-                            } else {
-                                "Не удалось проверить обновления"
-                            }
-                            context.showRaisedToast(message, Toast.LENGTH_SHORT)
-                            return@launch
-                        }
-
-                        if (isNewerVersion(currentVersion, release.versionTag)) {
-                            settingsStore.saveUpdateDialogShown(release.versionTag, checkedAt)
-                            pendingManualRelease = release
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "У вас уже последняя версия: ${displayVersion(release.versionTag)}",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Update,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            )
-        }
-
-        pendingManualRelease?.let { release ->
-            AppUpdateDialog(
-                release = release,
-                onPostpone = {
-                    pendingManualRelease = null
-                    context.showRaisedToast("Обновление отложено на 24 часа.", Toast.LENGTH_SHORT)
-                    scope.launch {
-                        val now = System.currentTimeMillis()
-                        settingsStore.saveUpdatePostpone(
-                            version = release.versionTag,
-                            until = now + 24L * 60L * 60L * 1000L
-                        )
-                        settingsStore.saveUpdateDialogAction(
-                            version = release.versionTag,
-                            action = UPDATE_DIALOG_ACTION_POSTPONED,
-                            actedAt = now
-                        )
-                    }
-                },
-                onUpdate = {
-                    pendingManualRelease = null
-                    scope.launch {
-                        settingsStore.saveUpdateDialogAction(
-                            version = release.versionTag,
-                            action = UPDATE_DIALOG_ACTION_UPDATE,
-                            actedAt = System.currentTimeMillis()
-                        )
-                        openUrlInBrowser(context, release.releaseUrl)
-                    }
-                }
-            )
         }
 
         if (showCryptoDialog) {

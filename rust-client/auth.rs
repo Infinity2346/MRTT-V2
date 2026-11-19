@@ -41,9 +41,6 @@ pub struct CallUnavailable {
     pub message: String,
 }
 
-/// Токен аккаунта VK/MAX отвергнут (коды 4, 5, 28): звонок тут ни при чём,
-/// нужен свежий токен. Отдельный тип, потому что реакция другая: приложение
-/// обновляет токен из сессии и перезапускает клиент, а не пересоздаёт звонок.
 #[derive(Debug)]
 pub struct AccountTokenExpired {
     pub code: i64,
@@ -177,7 +174,6 @@ impl VkAuth {
         }
     }
 
-    /// Workers join the server's Jitsi room instead of a TURN relay, so there is nothing to fetch.
     pub fn with_jitsi_room(mut self) -> Self {
         self.jitsi_room = true;
         self
@@ -971,8 +967,6 @@ fn check_fatal_call(response: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Токен доступа VK отозван или истёк: нужен новый, само по себе повторение
-/// запроса не поможет.
 pub(crate) fn is_auth_token_error(code: i64) -> bool {
     // 27 в этом наборе не случайно: приложение (`VkApi.TOKEN_INVALID_CODES`)
     // считает его таким же «токен больше не годится». Если Rust его не узнавал,
@@ -980,8 +974,6 @@ pub(crate) fn is_auth_token_error(code: i64) -> bool {
     matches!(code, 4 | 5 | 27 | 28)
 }
 
-/// Звонок больше не существует (удалён, истёк, «Call not found»): повторять
-/// запрос бессмысленно, звонок надо создавать заново.
 pub(crate) fn is_call_gone(code: i64, message: &str) -> bool {
     is_fatal_call_error(code, message)
 }

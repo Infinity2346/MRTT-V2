@@ -45,21 +45,16 @@ struct CreateClientRequest {
     local_port: Option<u16>,
     #[serde(default)]
     group_id: Option<String>,
-    /// 0 — без лимита; поле не передано — не менять (при создании — одно устройство).
     #[serde(default)]
     max_devices: Option<u32>,
-    /// Транспорт по умолчанию для профиля из ссылки: "vk", "jitsi" или пусто; не передан — не менять.
     #[serde(default)]
     transport: Option<String>,
-    /// true: в ссылке нет комнаты Jitsi; не передан — не менять.
     #[serde(default)]
     link_room_off: Option<bool>,
-    /// Выход конфига; не передан — не менять.
     #[serde(default)]
     exit: Option<String>,
 }
 
-/// MAX в ссылку не передаётся: он работает только через привязку на клиенте.
 fn normalize_link_transport(raw: &str) -> Result<String, &'static str> {
     match raw.trim() {
         "" => Ok(String::new()),
@@ -69,7 +64,6 @@ fn normalize_link_transport(raw: &str) -> Result<String, &'static str> {
     }
 }
 
-/// 1 хранится как `None` (значение по умолчанию), 0 — без лимита.
 fn validate_max_devices(value: u32) -> Result<Option<u32>, &'static str> {
     match value {
         1 => Ok(None),
@@ -80,7 +74,6 @@ fn validate_max_devices(value: u32) -> Result<Option<u32>, &'static str> {
 
 #[derive(Deserialize, Default)]
 struct UnbindQuery {
-    /// Пусто — отвязать все устройства ссылки.
     #[serde(default)]
     device: String,
 }
@@ -129,7 +122,6 @@ fn device_infos(
         .collect()
 }
 
-/// Отвязать устройство (или все) и оборвать их сессии.
 async fn unbind_client_devices(
     state: &WebState,
     password: &str,
@@ -416,7 +408,6 @@ struct ClientInfo {
     sub_uuid: String,
     #[serde(default)]
     workers: Option<u32>,
-    /// 0 — без лимита.
     max_devices: u32,
     #[serde(default)]
     transport: String,
@@ -3618,8 +3609,6 @@ async fn logs_download(State(state): State<WebState>) -> impl IntoResponse {
     }
 }
 
-/// API управления. Слушает только 127.0.0.1: приложение ходит сюда через SSH-туннель,
-/// поэтому наружу порт не открыт, а TLS и логин не нужны.
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
     let state = WebState { app: app.clone() };
     let router = Router::new()

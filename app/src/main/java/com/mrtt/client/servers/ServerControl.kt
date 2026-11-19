@@ -32,18 +32,13 @@ internal data class ServerClient(
     val workers: Int,
     val maxDevices: Int,
     val devices: List<ClientDevice>,
-    /** Транспорт в ссылке конфига: `vk`, `jitsi` или пусто. */
     val transport: String = "",
-    /** В ссылке нет комнаты Jitsi: клиент задаёт её сам. */
     val linkRoomOff: Boolean = false,
-    /** Выход конфига: пусто — как на сервере, `direct` — напрямую, иначе id выхода. */
     val exit: String = "",
 ) {
-    /** Строка владельца (главный пароль) всегда получает фиксированный IP 10.66.67.2. */
     val isOwner: Boolean get() = ip == OWNER_TUNNEL_IP && expires == 0L && groupId.isEmpty() && name == "Владелец"
 }
 
-/** Другой VPS, через который сервер может выпускать клиентов. */
 internal data class ServerExit(val id: String, val name: String, val host: String, val table: Int, val remotePassword: String = "")
 
 internal const val EXIT_DIRECT = "direct"
@@ -97,7 +92,6 @@ internal data class ServerSettings(
     val autoRestartHours: Int = 0,
     val vkToken: String = "",
     val vkHashes: String = "",
-    /** Комната Jitsi `host/room`, в которой сидит сервер; пусто — Jitsi выключен. */
     val jitsiRoom: String = "",
     val jitsiSeats: Int = 6,
     val restartRequired: Boolean = false,
@@ -125,7 +119,6 @@ internal val DNS_PROVIDERS = listOf(
     "custom" to "Ручной DNS",
 )
 
-/** Вызовы API управления сервером (то, что раньше делала веб-панель). */
 internal class ServerControl(context: Context, server: VpsServer) {
     private val api = ServerApi(context, server)
 

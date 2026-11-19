@@ -10,11 +10,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Имя файла журнала: `MRTT log 2026-11-06 15-30-12.txt`. */
 internal fun logFileName(prefix: String, now: Date = Date()): String =
     "$prefix ${SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.US).format(now)}.txt"
 
-/** Отправляет журнал текстовым файлом, а не текстом сообщения. */
 internal fun Context.shareLogFile(prefix: String, text: String) {
     try {
         // Живёт только последний отправленный файл: журналы не копятся в кэше.

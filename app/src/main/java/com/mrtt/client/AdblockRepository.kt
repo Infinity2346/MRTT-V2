@@ -8,19 +8,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Файлы Adblock на устройстве и загрузка подписок.
- *
- * Раскладка в `filesDir`:
- *  - `adblock.txt` — базовый снимок из ассетов (обновляется вместе с приложением);
- *  - `adblock-user.txt` — свои домены и исключения пользователя;
- *  - `adblock-subscriptions.txt` — всё, что скачалось из подписок;
- *  - `adblock-geosite-*.txt` — категории правил из MetaCubeX/meta-rules-dat;
- *  - `geosite-category-ru.txt` — российские сервисы для маршрутизации напрямую.
- *
- * Клиент Rust читает эти файлы при старте, поэтому изменения применяются после
- * переподключения. Готовые списки копируются из ассетов один раз на версию сборки.
- */
 internal object AdblockRepository {
 
     private const val TAG = MrttConstants.General.APP_NAME
@@ -35,11 +22,9 @@ internal object AdblockRepository {
     private const val GEOSITE_RAW_LIMIT = 24L * 1024L * 1024L
     const val RU_SERVICES_FILE = "geosite-category-ru.txt"
 
-    /** Откуда берём свежие наборы: ветка `sing` репозитория MetaCubeX. */
     private const val GEOSITE_BASE =
         "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite"
 
-    /** Пути к файлам правил: свои домены и подписки. Порядок = приоритет чтения. */
     fun ruleFiles(context: Context): List<File> = listOf(
         File(context.filesDir, USER_LIST),
         File(context.filesDir, SUBSCRIPTIONS_LIST),
@@ -51,20 +36,11 @@ internal object AdblockRepository {
 
     fun ruServicesFile(context: Context): File = File(context.filesDir, RU_SERVICES_FILE)
 
-    /** Файлы включённых категорий (их клиент читает отдельно от своих правил). */
     fun categoryFiles(context: Context, categories: Collection<String>): List<File> =
         AdblockPolicy.enabledCategories(categories).mapNotNull { category ->
             File(context.filesDir, category.assetFile).takeIf { it.isFile && it.length() > 0L }
         }
 
-    /**
-     * Обновляет наборы MetaCubeX из сети: скачивает JSON категорий и раскладывает
-     * их в `filesDir` поверх встроенных снимков.
-     *
-     * Каждая категория качается отдельно, ошибка одной не отменяет остальные.
-     * Встроенные файлы в APK не трогаются: если обновление не удалось, фильтр
-     * продолжает работать на снимке из сборки.
-     */
     suspend fun updateGeositeCategories(
         context: Context,
         onProgress: (done: Int, total: Int, title: String) -> Unit = { _, _, _ -> },
@@ -114,12 +90,10 @@ internal object AdblockRepository {
 
     data class GeositeUpdateResult(val updated: Int, val failed: Int, val domains: Int)
 
-    /** Когда наборы обновлялись в последний раз (0 — только из APK). */
     fun geositeUpdatedAt(context: Context): Long =
         runCatching { File(context.filesDir, GEOSITE_STAMP).readText().trim().toLongOrNull() }
             .getOrNull() ?: 0L
 
-    /** Есть ли обновлённые файлы на устройстве (то есть сеть уже когда-то работала). */
     fun hasUpdatedGeosite(context: Context): Boolean =
         AdblockPolicy.UPDATABLE_CATEGORIES.any { category ->
             File(context.filesDir, category.assetFile).let { it.isFile && it.length() > 0L }
@@ -159,16 +133,8 @@ internal object AdblockRepository {
         }
     }
 
-    /**
-     * Раскладывает ассеты по `filesDir`. Списки из ассетов обновляются вместе с
-     * приложением (по номеру версии), а пользовательские файлы не трогаются никогда.
-     */
     suspend fun syncAssets(context: Context) = withContext(Dispatchers.IO) { syncAssetsBlocking(context) }
 
-    /**
-     * То же, но синхронно: клиент запускается из команды, где приостановиться нельзя,
-     * а списки нужны до старта процесса.
-     */
     fun syncAssetsBlocking(context: Context) {
         val version = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode
@@ -201,26 +167,19 @@ internal object AdblockRepository {
         runCatching { stamp.writeText(version) }
     }
 
-    /** Записывает пользовательские правила (свои домены + исключения). */
     suspend fun saveUserRules(context: Context, text: String) = withContext(Dispatchers.IO) {
         runCatching { userListFile(context).writeText(text) }
     }
 
-    /** Синхронная запись своих доменов: файл должен быть готов до старта клиента. */
     fun writeUserRulesBlocking(context: Context, text: String) {
         runCatching { userListFile(context).writeText(text) }
             .onFailure { error -> Log.w(TAG, "[ADBLOCK] Не удалось записать свои домены", error) }
     }
 
-    /** Записывает всё скачанное из подписок. */
     suspend fun saveSubscriptionRules(context: Context, text: String) = withContext(Dispatchers.IO) {
         runCatching { subscriptionsFile(context).writeText(text) }
     }
 
-    /**
-     * Скачивает включённые подписки и складывает их в один файл.
-     * Возвращает число успешно скачанных списков и общее число доменов.
-     */
     suspend fun downloadSubscriptions(
         context: Context,
         subscriptions: List<AdblockPolicy.Subscription>,

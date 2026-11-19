@@ -17,17 +17,9 @@ private fun contrast(a: Color, b: Color): Float {
     return (hi + 0.05f) / (lo + 0.05f)
 }
 
-/**
- * Подпись для заданного фона: белая или тёмная — та, что контрастнее.
- * Так «белый текст на белой кнопке» невозможен в любом стиле.
- */
 fun mrttOn(background: Color): Color =
     if (contrast(Color.White, background) >= contrast(InkOnLight, background)) Color.White else InkOnLight
 
-/**
- * Собирает полную схему из нескольких опорных цветов.
- * Контейнеры и подписи считаются автоматически, контраст — гарантирован.
- */
 fun mrttScheme(
     dark: Boolean,
     primary: Long,
@@ -85,6 +77,5 @@ fun mrttScheme(
     }
 }
 
-/** Пятно света на фоне: цвет в формате 0xAARRGGBB. */
 fun mrttBlob(x: Float, y: Float, radius: Float, argb: Long) =
     MrttBackdropBlob(x = x, y = y, radius = radius, color = Color(argb))

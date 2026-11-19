@@ -1,15 +1,3 @@
-//! Резервный транспорт MAX: TCP + TLS + MessagePack (ver=10).
-//!
-//! У MAX два входа в один и тот же сигналинг:
-//!   1. `wss://ws-api.oneme.ru/websocket` — JSON, ver=11, то, чем ходит web.max.ru;
-//!   2. `api.oneme.ru:443` — сырой TLS, 10-байтный заголовок + MessagePack, ver=10,
-//!      то, чем ходят официальные приложения.
-//!
-//! На живом телефоне web-хост не открывался вовсе (`Connection timed out`),
-//! хотя адрес находился: оператор резал именно `ws-api`. Этот модуль повторяет
-//! второй путь и отдаёт тот же `call_token` (opcode 158), что и WS-вариант.
-//! Никаких новых зависимостей: TLS уже есть (`turn-rustls`), а MessagePack
-//! кодируется и разбирается здесь же — нужен маленький срез формата.
 
 use anyhow::{Context, Result, bail};
 use std::time::Duration;
@@ -21,25 +9,21 @@ use uuid::Uuid;
 
 pub const MAX_TCP_HOST: &str = "api.oneme.ru";
 const MAX_TCP_PORT: u16 = 443;
-/// Версия протокола приложений. Web-протокол — 11, приложения — 10.
 const PROTOCOL_VERSION: u8 = 10;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
-/// Кадр больше этого не бывает: защита от мусора в заголовке.
 const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_DECODED_BYTES: usize = 8 * 1024 * 1024;
 
 trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
 
-/// Готовая сессия: TLS-поток плюс счётчик `seq`.
 struct Session {
     stream: Box<dyn Io>,
     seq: u16,
 }
 
 impl Session {
-    /// Отправить запрос: заголовок ver=10 + MessagePack-payload.
     async fn send(&mut self, opcode: u16, payload: Vec<u8>) -> Result<()> {
         self.seq = self.seq.wrapping_add(1);
         let mut frame = Vec::with_capacity(10 + payload.len());
@@ -57,8 +41,6 @@ impl Session {
         Ok(())
     }
 
-    /// Дождаться ответа `cmd=1` на `opcode`. Сервер присылает и push-сообщения
-    /// (`cmd=0`), и ошибки (`cmd=3`) — их пропускаем либо отдаём как ошибку.
     async fn wait_for(&mut self, opcode: u16) -> Result<Mp> {
         let deadline = tokio::time::Instant::now() + STEP_TIMEOUT;
         let mut skipped = 0usize;
@@ -181,13 +163,6 @@ impl Session {
     }
 }
 
-/// Токен, который выдаёт web.max.ru, — это токен ВЕБ-сессии.
-///
-/// Приложение MAX (`api.oneme.ru`, ver=10) проверяет токен иначе и на веб-токен
-/// отвечает `login.cred` / `FAIL_WRONG_PASSWORD`, хотя сам токен живой: ровно
-/// эта пара и приходила с телефона («MAX привязан», а потом отказ). Поэтому
-/// веб-токен в приложение-протокол не отправляем вовсе — честно говорим, что
-/// нужен другой транспорт, а не крутим отказ как сетевую ошибку.
 pub(crate) fn is_web_session_token(token: &str) -> bool {
     // Токены приложения MAX заметно длиннее веб-сессионных (в них больше
     // 96 символов). Разделение только по длине: формату сервера не верим,
@@ -196,7 +171,6 @@ pub(crate) fn is_web_session_token(token: &str) -> bool {
     token.trim().len() < 96
 }
 
-/// Получить `call_token` через приложение-протокол MAX (TCP + TLS + MessagePack).
 pub async fn fetch_call_token(access_token: &str, device_id: &str) -> Result<String> {
     if access_token.trim().is_empty() {
         bail!("MAX TCP: пустой access token");
@@ -264,13 +238,10 @@ pub async fn fetch_call_token(access_token: &str, device_id: &str) -> Result<Str
 }
 
 struct LoginOutcome {
-    /// Новый токен сессии, если сервер его выдал.
     session_token: Option<String>,
-    /// Токен для calls-API (opcode 158), если сервер его выдал.
     call_token: Option<String>,
 }
 
-/// INIT → LOGIN → LOGIN2 → 158 в одной открытой сессии.
 async fn session_login(session: &mut Session, token: &str, device_id: &str) -> Result<LoginOutcome> {
     session
         .send(OPCODE_HELLO, hello_payload(device_id))
@@ -322,8 +293,6 @@ async fn session_login(session: &mut Session, token: &str, device_id: &str) -> R
     Ok(LoginOutcome { session_token, call_token })
 }
 
-/// Токен из ответа LOGIN: `tokenAttrs.LOGIN.token` (так его отдаёт SMS/QR-вход)
-/// либо плоское `token`.
 fn login_token(message: &Mp) -> Option<String> {
     let nested = message
         .get("tokenAttrs")
@@ -337,11 +306,6 @@ fn login_token(message: &Mp) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Новый токен сессии, который MAX выдал в ответе LOGIN.
-///
-/// Сервер меняет токен при первом входе: старый после этого недействителен
-/// (`login.cred`), а calls-бэкенд отвечает `AUTH_LOGIN: Access token is broken`.
-/// Приложение должно сохранить этот токен и ходить дальше с ним.
 pub fn take_session_token() -> Option<String> {
     SESSION_TOKEN.lock().ok().and_then(|mut slot| slot.take())
 }
@@ -356,9 +320,7 @@ static SESSION_TOKEN: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 
 const OPCODE_HELLO: u16 = 6;
 const OPCODE_LOGIN: u16 = 19;
-/// Второй шаг входа приложения: переводит сессию в рабочее («онлайн») состояние.
 const OPCODE_LOGIN2: u16 = 8;
-/// Кадр не разобрался как MessagePack (не транспортная поломка).
 #[derive(Debug)]
 struct DecodeError;
 
@@ -374,12 +336,9 @@ fn is_decode_error(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| cause.is::<DecodeError>())
 }
 
-/// Сколько нечитаемых кадров подряд терпим, прежде чем считать соединение мёртвым.
 const MAX_SKIPPED_FRAMES: usize = 8;
 
 const OPCODE_CALL_TOKEN: u16 = 158;
-/// Сервер завершил сессию: так MAX отвечает, когда тот же токен уже занят
-/// другим клиентом (например, открытой web-сессией).
 const OPCODE_LOGOUT: u16 = 20;
 
 async fn connect() -> Result<Session> {
@@ -453,17 +412,6 @@ fn tls_config() -> std::sync::Arc<ClientConfig> {
         .clone()
 }
 
-/// SESSION_INIT для приложения-протокола. Порядок и набор полей не такие
-/// вольные, как в web-версии: приложение присылает профиль Android, включая
-/// `clientSessionId` (время в миллисекундах) и `arch`. Поля идут в том же
-/// порядке, что у приложения: поддельный отпечаток должен быть правдоподобным.
-/// Отпечаток устройства для INIT.
-///
-/// Тип устройства обязан совпадать с тем, где выдан токен: привязка идёт
-/// через web.max.ru, поэтому приложение-протокол представляется WEB-клиентом
-/// (тот же набор полей, что у браузера). С отпечатком ANDROID/GCM сервер
-/// принимал LOGIN, сразу присылал `opcode 20` (закрытие сессии) и на 158
-/// отвечал `proto.state: Must be ONLINE session`.
 fn hello_payload(device_id: &str) -> Vec<u8> {
     let mut out = Vec::new();
     map(&mut out, 3);
@@ -492,12 +440,10 @@ fn hello_payload(device_id: &str) -> Vec<u8> {
     out
 }
 
-/// Web-клиент MAX: тот же User-Agent, под которым работает web.max.ru.
 const WEB_USER_AGENT: &str =
     "Mozilla/5.0 (Linux; Android 15; CPH2645) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/144.0.0.0 Mobile Safari/537.36";
 
-/// ABI устройства: сервер сверяет его с `arch` в отпечатке.
 #[cfg(target_arch = "aarch64")]
 const ANDROID_ARCH: &str = "arm64-v8a";
 #[cfg(target_arch = "arm")]
@@ -551,7 +497,6 @@ fn map(out: &mut Vec<u8>, entries: usize) {
     }
 }
 
-/// Кодирование массивов нужно только тестам: запросы MAX — плоские карты.
 #[cfg(test)]
 fn array(out: &mut Vec<u8>, entries: usize) {
     if entries < 16 {
@@ -598,7 +543,6 @@ fn int_value(out: &mut Vec<u8>, value: i64) {
 
 // ── MessagePack: разборщик ──────────────────────────────────────────────────
 
-/// Разобранное значение MessagePack — только то, что нужно ответам MAX.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mp {
     Nil,
@@ -629,7 +573,6 @@ impl Mp {
         }
     }
 
-    /// Короткое текстовое описание для журнала (без утечки токенов целиком).
     fn describe(&self) -> String {
         let text = format!("{self:?}");
         if text.chars().count() > 200 {
@@ -640,11 +583,6 @@ impl Mp {
     }
 }
 
-/// Разбор кадра: сервер присылает служебный префикс перед msgpack-объектом —
-/// два ведущих int (`f0 a0`, `f3 a7`, …) или другой мусор. Префикс не часть
-/// структуры, и его длина плавает от версии к версии, поэтому объект ищем не
-/// «по формуле», а перебором: первый offset, на котором карта разбирается и
-/// съедает payload целиком, и есть начало объекта.
 fn decode_message(payload: &[u8]) -> Result<Mp> {
     let preferred = leading_ints_len(payload);
     let mut candidates = vec![preferred];
@@ -864,17 +802,6 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// LZ4-блок (бит 24 в длине кадра). Сжатые ответы бывают у больших LOGIN, но
-/// заголовок может прийти и с флагом — тогда разжимаем сами.
-/// Разобрать payload: перебрать способы распаковки и взять тот, после
-/// которого получается корректный MessagePack.
-///
-/// Флаг в старшем байте длины НЕ определяет кодек однозначно: живой сервер
-/// прислал ответ LOGIN с `флаг=0x03`, 16 КБ, и он не читается ни как чистый
-/// LZ4-блок, ни как zstd с нуля. Поэтому вместо угадывания по флагу
-/// перебираем варианты (флаг-предпочтительный первым) и проверяем результат
-/// разбором: это ровно то, что нужно — важно получить профиль, а не угадать
-/// название кодека. Успешный вариант пишется в журнал один раз на флаг.
 fn decode_frame(payload: &[u8], flag: u8) -> Result<Mp> {
     if flag == 0 {
         return decode_message(payload);
@@ -904,8 +831,6 @@ fn decode_frame(payload: &[u8], flag: u8) -> Result<Mp> {
     bail!("ни один способ распаковки не дал MessagePack: {}", errors.join("; "))
 }
 
-/// Варианты распаковки в порядке предпочтения: сначала тот, на который
-/// указывает флаг, затем остальные.
 fn decompress_candidates(payload: &[u8], flag: u8) -> Vec<(&'static str, Result<Vec<u8>>)> {
     let mut out: Vec<(&'static str, Result<Vec<u8>>)> = Vec::new();
     let preferred: &[&str] = match flag {
@@ -939,8 +864,6 @@ fn decompress_candidates(payload: &[u8], flag: u8) -> Vec<(&'static str, Result<
     out
 }
 
-/// Пишем в журнал, какой кодек реально сработал: по этой строке видно,
-/// совпал ли он с флагом.
 fn report_decoder(flag: u8, name: &'static str) {
     use std::sync::{Mutex, OnceLock};
     static SEEN: OnceLock<Mutex<Vec<(u8, &'static str)>>> = OnceLock::new();
@@ -967,8 +890,6 @@ fn report_decoder(flag: u8, name: &'static str) {
     }
 }
 
-/// Строка «один раз за процесс»: повторяющиеся шаги (обмен токена на каждом
-/// входе) не должны превращать журнал в простыню.
 fn report_once(flag: &std::sync::atomic::AtomicBool, message: impl FnOnce() -> &'static str) {
     if flag.swap(true, std::sync::atomic::Ordering::AcqRel) {
         return;
@@ -978,13 +899,6 @@ fn report_once(flag: &std::sync::atomic::AtomicBool, message: impl FnOnce() -> &
 
 static SESSION_TOKEN_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Распаковка payload по флагу старшего байта длины.
-///
-/// MAX нарезает флаг так: `0x00` — без сжатия, `0x01..=0x7f` — LZ4,
-/// `0xff` — zstd. Большие ответы (LOGIN со списком чатов, профиль) приходят
-/// именно zstd; раньше мы всегда звали LZ4 и получали на них «LZ4 неверное
-/// смещение», хотя токен был в порядке. Неизвестный флаг теперь пробуем
-/// обоими способами: важнее распаковать, чем угадать.
 #[allow(dead_code)] // используется в тестах: боевой путь идёт через decode_frame
 fn decompress_payload(input: &[u8], flag: u8) -> Result<Vec<u8>> {
     match flag {
@@ -1014,13 +928,6 @@ fn lz4_block(input: &[u8]) -> Result<Vec<u8>> {
     lz4_block_with(input, false)
 }
 
-/// LZ4-блок с явным порядком байт смещения.
-///
-/// По спецификации LZ4 смещение — little-endian, но живые данные MAX
-/// читались и как big-endian, поэтому перебираем оба варианта и проверяем
-/// результат разбором MessagePack (см. `decode_frame`). Диагностика с
-/// телефона: «неверное смещение 6656» = 0x1A00, при обратном порядке это 26 —
-/// валидное смещение, значит на больших блоках сервер отдаёт LE.
 fn lz4_block_with(input: &[u8], little_endian: bool) -> Result<Vec<u8>> {
     let mut out: Vec<u8> = Vec::with_capacity(input.len() * 2);
     let mut index = 0usize;

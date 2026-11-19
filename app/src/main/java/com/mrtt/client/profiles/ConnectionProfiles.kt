@@ -13,7 +13,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** Добавленная ссылка подключения; [group] — имя сабки, из которой она пришла. */
 internal data class ConnectionProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -21,7 +20,6 @@ internal data class ConnectionProfile(
     val group: String = "",
 )
 
-/** Сабка: одна ссылка, внутри которой несколько mrtt-ссылок (можно с разных серверов). */
 internal data class Subscription(val name: String, val links: List<Pair<String, String>>)
 
 internal const val SUBSCRIPTION_SCHEME = "mrttsub://"
@@ -59,7 +57,6 @@ internal class ProfileRepository(context: Context) {
 
     suspend fun current(): List<ConnectionProfile> = profiles.first()
 
-    /** Добавляет ссылку или сабку. Возвращает число новых профилей или null, если текст не распознан. */
     suspend fun import(raw: String, name: String = ""): Int? {
         val text = raw.trim()
         val subscription = decodeSubscription(text)
@@ -96,14 +93,12 @@ internal class ProfileRepository(context: Context) {
         )
     }
 
-    /** Меняет ссылку профиля (свои хеши и т. п.); активный профиль сразу получает новую ссылку. */
     suspend fun updateLink(id: String, link: String) {
         val updated = current().map { if (it.id == id) it.copy(link = link) else it }
         save(updated)
         if (activeId.first() == id) updated.firstOrNull { it.id == id }?.let { activate(it) }
     }
 
-    /** Выбранный транспорт VK или Jitsi сохраняется в ссылке активного профиля; MAX в ссылку не попадает. */
     suspend fun rememberTransport(transport: String) {
         val id = activeId.first()
         val profile = current().firstOrNull { it.id == id } ?: return
@@ -114,7 +109,6 @@ internal class ProfileRepository(context: Context) {
         store.activateConnectionProfile(id, rebuilt)
     }
 
-    /** Один раз переносит ссылки старых слотов (в том числе настройки «владельца»). */
     suspend fun migrateLegacy() {
         if (store.connectionProfilesMigrated()) return
         val existing = current()

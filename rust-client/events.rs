@@ -41,8 +41,6 @@ impl Events {
         self.enabled
     }
 
-    /// Запоминает шину событий процесса, чтобы её могли найти части, которым
-    /// события не передавали явно (например, прямой релей).
     pub fn install(&self) {
         let _ = GLOBAL.set(self.clone());
     }
@@ -72,8 +70,6 @@ impl Events {
         self.emit("CONFIG", || serde_json::json!({"config": config}));
     }
 
-    /// Реально занятый локальный порт: в режиме скрытия приложение не знает
-    /// его заранее (0 = свободный), а показать, что порт занят, всё равно нужно.
     pub fn local_port(&self, port: &str) {
         self.emit("LOCAL_PORT", || {
             serde_json::json!({ "port": port.parse::<u16>().unwrap_or(0) })
@@ -109,12 +105,10 @@ impl Events {
         self.emit("ACTIVE_ZERO", || serde_json::json!({}));
     }
 
-    /// Result of a ping through the tunnel, in ms; -1 when nothing answered.
     pub fn probe(&self, ms: Option<u64>) {
         self.emit("PROBE", || serde_json::json!({"ms": ms.map_or(-1, |ms| ms as i64)}));
     }
 
-    /// How many workers the room really takes.
     pub fn room_seats(&self, seats: usize) {
         self.emit("ROOM_SEATS", || serde_json::json!({"seats": seats}));
     }
@@ -171,10 +165,6 @@ impl Events {
         *window = None;
     }
 
-    /// Режим «напрямую, но с фильтром» назначается приложению, а поток опознаётся
-    /// по паре адресов: приложение в Kotlin находит владельца соединения и просит
-    /// записать эту пару в клиент. Ответов на событие может быть несколько — по
-    /// каждому сопоставлению отдельно, чтобы не гадать о владельце пакета.
     pub fn flow_owner(&self, src: &str, dst: &str, protocol: u8) {
         self.emit(
             "FLOW_OWNER",
@@ -182,28 +172,14 @@ impl Events {
         );
     }
 
-    /// Токен аккаунта VK/MAX больше не принимается.
-    ///
-    /// Приложение по этому событию обновляет токен из сохранённой сессии и
-    /// перезапускает клиент: звонок на телефон или пропажа сети не должны
-    /// требовать ручного «выключить и включить VPN».
     pub fn auth_expired(&self, code: i64) {
         self.emit("AUTH_EXPIRED", || serde_json::json!({ "code": code }));
     }
 
-    /// MAX не принял свой токен (`login.cred`).
-    ///
-    /// Отдельное событие, а не `auth_expired`: раньше отказ MAX приходил как
-    /// «истёк токен VK», приложение шло обновлять вход в VK и затирало рабочую
-    /// привязку. Теперь MAX-токен чинится только в MAX.
     pub fn max_token_rejected(&self) {
         self.emit("MAX_TOKEN_REJECTED", || serde_json::json!({}));
     }
 
-    /// MAX выдал новый токен сессии (обмен при первом входе).
-    ///
-    /// Токен надо сохранить: старый после обмена недействителен — сервер
-    /// отвечает `login.cred`, а calls-API «Access token is broken».
     pub fn max_session_token(&self, token: &str) {
         self.emit("MAX_SESSION_TOKEN", || {
             serde_json::json!({ "token": token })
@@ -235,7 +211,6 @@ impl Events {
 
 static GLOBAL: std::sync::OnceLock<Events> = std::sync::OnceLock::new();
 
-/// Шина событий процесса, если она установлена.
 pub fn current() -> Option<&'static Events> {
     GLOBAL.get()
 }

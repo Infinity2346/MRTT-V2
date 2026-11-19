@@ -1381,7 +1381,6 @@ unsafe fn libc_geteuid() -> u32 {
     0
 }
 
-/// Keeps the rules of clients with an exit server in line with the settings.
 // shortcut: a new device leaves directly until the next pass, up to 10 s; trigger the pass on admission if that matters.
 async fn exit_routes_loop(app: Arc<App>) {
     let mut failing = false;

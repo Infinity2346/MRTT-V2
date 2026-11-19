@@ -283,13 +283,9 @@ pub fn is_template_domain(sni: &str) -> bool {
     false
 }
 
-/// Набор доменов «всегда напрямую» из geosite (например `geosite-category-ru`).
-/// Ставится один раз при старте из файла: в наборе тысячи имён, и линейный перебор
-/// пользовательского списка на каждый SNI/DNS был бы заметен.
 static DIRECT_DOMAIN_SET: LazyLock<RwLock<HashSet<String>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
 
-/// Устанавливает набор geosite и возвращает число доменов в нём.
 pub fn install_direct_domain_set(domains: HashSet<String>) -> usize {
     let count = domains.len();
     if let Ok(mut guard) = DIRECT_DOMAIN_SET.write() {
@@ -298,12 +294,10 @@ pub fn install_direct_domain_set(domains: HashSet<String>) -> usize {
     count
 }
 
-/// Сколько доменов в geosite-наборе (0, если набор не загружали).
 pub fn direct_domain_set_len() -> usize {
     DIRECT_DOMAIN_SET.read().map(|set| set.len()).unwrap_or(0)
 }
 
-/// Домен или его родитель есть в geosite-наборе.
 pub fn is_geosite_direct_domain(sni: &str) -> bool {
     let Ok(set) = DIRECT_DOMAIN_SET.read() else {
         return false;

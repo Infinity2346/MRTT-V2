@@ -12,9 +12,7 @@ data class ConnectionSource(
     val vkAccessToken: String,
     val tokenFromLink: Boolean,
     val maxGroupId: String = "",
-    /** Комната Jitsi из ссылки, когда выбран транспорт Jitsi. */
     val jitsiRoom: String = "",
-    /** Места сервера в комнате из ссылки; 0, если неизвестно (например, своя комната). */
     val jitsiSeats: Int = 0,
 )
 

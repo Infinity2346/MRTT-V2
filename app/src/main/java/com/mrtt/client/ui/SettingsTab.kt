@@ -70,8 +70,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import android.widget.Toast
 
-private const val WORKERS_PER_GROUP = MrttConstants.Tunnel.WORKERS_PER_GROUP
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsTab(
@@ -283,11 +281,7 @@ internal fun SettingsTabContent(
     ).coerceAtMost(SLIDER_MAX_WORKERS).toFloat()
     var sniInput by rememberSaveable { mutableStateOf("") }
 
-    val currentWorkers = roundToGroup(
-        (savedWorkersPerHash ?: WORKERS_PER_GROUP).toFloat()
-            .coerceIn(WORKER_STEPS.first(), selectableMaxWorkers),
-        selectableMaxWorkers,
-    )
+    val requestedWorkers = WorkerCountPolicy.requested(savedWorkersPerHash)
 
     val hashErrors = remember(vkHash1, vkHash2, vkHash3, vkHash4, vkHash5, vkHash6) {
         buildList {
@@ -389,11 +383,11 @@ internal fun SettingsTabContent(
         saveJob?.cancel()
         scope.launch {
             if (participantMode) {
-                settingsStore.saveParticipantTunnelSettings(hashes, currentWorkers.toInt())
+                settingsStore.saveParticipantTunnelSettings(hashes, requestedWorkers)
             } else {
                 settingsStore.save(
                     peerInput, hashes, "",
-                    currentWorkers.toInt(), "udp", 0, sniInput, false
+                    requestedWorkers, "udp", 0, sniInput, false
                 )
             }
             onSaved?.invoke()
@@ -405,11 +399,11 @@ internal fun SettingsTabContent(
         saveJob = scope.launch {
             delay(300)
             if (participantMode) {
-                settingsStore.saveParticipantTunnelSettings(combinedHashes, currentWorkers.toInt())
+                settingsStore.saveParticipantTunnelSettings(combinedHashes, requestedWorkers)
             } else {
                 settingsStore.save(
                     peerInput, combinedHashes, "",
-                    currentWorkers.toInt(), "udp", 0, sniInput, false
+                    requestedWorkers, "udp", 0, sniInput, false
                 )
             }
         }
@@ -460,13 +454,6 @@ internal fun SettingsTabContent(
                 20,
                 false,
             )
-        }
-    }
-
-    LaunchedEffect(initialized, currentWorkers, savedWorkersPerHash) {
-        val savedWorkers = savedWorkersPerHash
-        if (initialized && savedWorkers != null && currentWorkers.toInt() != savedWorkers) {
-            scope.launch { settingsStore.saveWorkersPerHash(currentWorkers.toInt()) }
         }
     }
 
@@ -849,7 +836,7 @@ internal fun SettingsTabContent(
                     )
                 } else {
                     TunnelWorkersControl(
-                        value = currentWorkers,
+                        value = requestedWorkers.toFloat(),
                         maximum = selectableMaxWorkers,
                         enabled = !tunnelRunning,
                         onValueChange = { value ->
@@ -1383,7 +1370,6 @@ private fun TransportModeSelector(
     }
 }
 
-/** Как «Ссылки VK звонков»: кнопка показывает, откуда комната, и открывает ввод своей. */
 @Composable
 private fun JitsiRoomButton(overrideRoom: String, linkRoom: String, onClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1413,7 +1399,6 @@ private fun JitsiRoomButton(overrideRoom: String, linkRoom: String, onClick: () 
     }
 }
 
-/** Воркеры Jitsi: каждый заходит в комнату отдельным участником, больше мест сервера (16) смысла нет. */
 @Composable
 private fun JitsiWorkersControl(value: Int, maximum: Int, enabled: Boolean, fixedSeats: Int?, onValueChange: (Int) -> Unit) {
     val minimum = MrttConstants.Tunnel.MIN_JITSI_WORKERS

@@ -52,7 +52,6 @@ import com.mrtt.client.ui.common.LinkShareDialog
 import com.mrtt.client.ui.common.rememberActionRunner
 import com.mrtt.client.ui.utils.parseMrttLink
 
-/** Вкладка «Профили»: список профилей и сабок; нажатие на профиль открывает его в «Транспорт». */
 @Composable
 internal fun ProfilesTab(onOpened: () -> Unit) {
     com.mrtt.client.ui.components.MrttScreen {
@@ -65,13 +64,11 @@ internal fun ProfilesTab(onOpened: () -> Unit) {
     }
 }
 
-/** Хост и порт адреса проверки; null, если адрес не разобрать. */
 private fun pingTarget(url: String): Pair<String, Int>? = runCatching {
     val parsed = java.net.URL(url.trim())
     parsed.host.takeIf { it.isNotBlank() }?.let { it to if (parsed.port > 0) parsed.port else parsed.defaultPort }
 }.getOrNull()
 
-/** Раздел «Профили»: добавленные конфиги и подписки, свои и чужие. Выбранный профиль — то, к чему подключаемся. */
 @Composable
 internal fun ProfilesSection(onOpened: () -> Unit = {}) {
     val context = LocalContext.current.applicationContext
@@ -289,7 +286,6 @@ private fun ProfileRow(
     }
 }
 
-/** Свои VK-хеши, ID группы MAX и комната Jitsi у добавленного конфига: ссылка пересобирается. */
 @Composable
 private fun ProfileEditDialog(profile: ConnectionProfile, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     val link = remember(profile.link) { parseMrttLink(profile.link) } ?: run { onDismiss(); return }

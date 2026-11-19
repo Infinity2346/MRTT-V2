@@ -243,12 +243,6 @@ internal fun ConnectionTab(
         }
     }
 
-    /**
-     * Автоподключение при входе в приложение. Срабатывает один раз за запуск
-     * экрана и только когда пользователь сам включил его в настройках.
-     * Туннель поднимается, если он ещё не работает; если VPN-разрешения нет,
-     * ничего не происходит — приложение просто открывается.
-     */
     val autoConnectOnLaunch by settingsStore.autoConnectOnLaunch.collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(autoConnectOnLaunch, isValid, tunnelRunning, tunnelStarting) {
         if (!autoConnectOnLaunch || !isValid) return@LaunchedEffect

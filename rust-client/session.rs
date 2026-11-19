@@ -87,7 +87,6 @@ pub struct SessionConfig {
     pub turn_endpoint_cursor: usize,
     pub salt: Arc<str>,
     pub mode: ObfsMode,
-    /// Режим «скрывать трафик»: пакеты выглядят как медиа-поток.
     pub stealth: bool,
     #[allow(dead_code)]
     pub wrap_key: [u8; 32],
@@ -99,7 +98,6 @@ pub struct SessionConfig {
     pub jitsi_room: Option<Arc<crate::jitsi_room::RoomTarget>>,
 }
 
-/// Placeholder TURN address of room workers: their datagrams go through the Jitsi room, not a relay.
 pub const JITSI_ROOM_ADDRESS: &str = "jitsi-room";
 
 pub struct SessionRuntime {
@@ -180,13 +178,9 @@ struct TransportShared {
     recv_cipher: ArcSwap<SessionCipher>,
     config: ObfsConfig,
     pool: Arc<PacketPool>,
-    /// Когда с сервера в последний раз пришёл хоть один датаграмм.
     last_inbound: Arc<AtomicU64>,
-    /// Сервер отвечает эхом на keepalive: тогда тишину меряем строго.
     peer_echoes: AtomicBool,
-    /// Когда мы последний раз отправили в туннель настоящие данные (не keepalive).
     last_data_outbound: AtomicU64,
-    /// Просьба сторожа тишины отправить эхо-пинг вне расписания.
     probe: tokio::sync::Notify,
 }
 
@@ -602,68 +596,27 @@ impl ReplayWindow {
     }
 }
 
-/// Сколько ждём завершения рукопожатия. Пять секунд не хватало: мост VK
-/// отдаёт полёты с задержкой, и рукопожатие обрывалось на последнем шаге —
-/// сессия уходила на WRAP-SRTP. Максимум ограничен отдельно, чтобы зависший
-/// сервер не держал воркер минуту.
 const DTLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(9000);
-/// Пока рукопожатие двигается (сервер присылает новые полёты), ждём дальше,
-/// но не больше этого срока от старта.
 const DTLS_HANDSHAKE_DEADLINE: Duration = Duration::from_millis(15000);
 const DTLS_RETRANSMIT_TIMEOUT: Duration = Duration::from_millis(500);
-/// Потолок экспоненциальной паузы между повторами полёта (как в RFC 6347).
 const DTLS_RETRANSMIT_MAX: Duration = Duration::from_millis(2000);
 
-/// Сколько воркеров одновременно пробуют DTLS, пока поддержка сервера неизвестна.
-/// Остальные сразу работают на WRAP-SRTP: один зонд вместо тридцати ожиданий.
-/// ВАЖНО: ровно один. Несколько одновременных ClientHello — это для моста
-/// «слишком часто», и все зонды, кроме первого, получали отказ даже тогда,
-/// когда DTLS на сервере работает.
 const DTLS_PROBE_SLOTS: u8 = 1;
-/// Сколько неудач подряд считаем приговором серверу при живом обмене датаграммами.
-/// Один отказ часто означает rate-limit, а не «DTLS не поддержан».
 const DTLS_FAILURES_BEFORE_UNAVAILABLE: u8 = 2;
-/// Как долго не пробовать DTLS заново, если сервер не ответил ни одним датаграммом.
 const DTLS_UNAVAILABLE_BACKOFF: Duration = Duration::from_secs(20);
-/// То же, но когда сервер отвечал и рукопожатие всё же не сложилось.
 const DTLS_REJECTED_BACKOFF: Duration = Duration::from_secs(60);
-/// Пауза перед повторной попыткой, когда сервер отвечает, но рукопожатие
-/// сорвалось: мост не любит частые ClientHello, а пауза в пару секунд
-/// rate-limit уже переживает.
 const DTLS_RETRY_PAUSE: Duration = Duration::from_secs(3);
-/// Не чаще одной сводки о недоступности DTLS в это окно.
 const DTLS_REPORT_WINDOW: Duration = Duration::from_secs(30);
 
-/// Сколько молчания туннеля считаем нормой, если сервер отвечает на keepalive.
-/// Писатель шлёт keepalive каждые 10 секунд, сервер отвечает PATH_ECHO — значит
-/// при живом пути тишина дольше полуминуты невозможна.
-///
-/// Порог был 60 секунд и срабатывал на исправном пути: пока приложение качает
-/// или отдаёт трафик, очередь писателя не пустеет, keepalive «за жадным»
-/// `tokio::select!` не отправляется, и сторож объявлял сервер мёртвым ровно
-/// через минуту. Отсюда и «поток N: 64 секунд без ответов сервера через звонок»
-/// сразу на нескольких воркерах. Теперь запас больше, а keepalive отправляется
-/// по расписанию независимо от очереди (см. `writer_loop`).
 const SILENCE_LIMIT_ECHOED: Duration = Duration::from_secs(90);
-/// То же для серверов без эха на keepalive. Здесь судить можно только по
-/// данным: если пользователь что-то запрашивал, а ответа нет дольше этого —
-/// путь порван.
 const SILENCE_LIMIT_PLAIN: Duration = Duration::from_secs(150);
-/// Сколько туннель должен молчать со стороны пользователя, чтобы мы вообще
-/// перестали судить о тишине: пустой туннель ничего не ждёт.
 const IDLE_TOLERANCE: Duration = Duration::from_secs(60);
-/// Как часто проверяем тишину.
 const SILENCE_CHECK: Duration = Duration::from_secs(5);
-/// Как часто писатель шлёт эхо-пинг (сервер отвечает PATH_ECHO).
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Общая точка отсчёта для меток времени сессий: монотонная, без прыжков
-/// системных часов.
 static SESSION_EPOCH: std::sync::LazyLock<std::time::Instant> =
     std::sync::LazyLock::new(std::time::Instant::now);
 
-/// Подробные строки (Relay, DIRECT, конфиг) пишем только для первых потоков:
-/// на сотне потоков одни и те же шаги дают сотни одинаковых строк в журнале.
 const DETAILED_SESSION_LOGS: usize = 3;
 
 fn verbose_session(id: usize) -> bool {
@@ -676,7 +629,6 @@ fn elapsed_millis() -> u64 {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DtlsAvailability {
-    /// Поддержка сервера ещё не выяснена: пробуют только несколько воркеров.
     Unknown,
     Available,
     Unavailable,
@@ -685,7 +637,6 @@ enum DtlsAvailability {
 struct DtlsGate {
     availability: DtlsAvailability,
     probing: u8,
-    /// Подряд идущие неудачи при живом обмене датаграммами.
     failures: u8,
     retry_at: Option<tokio::time::Instant>,
     last_report: Option<tokio::time::Instant>,
@@ -707,9 +658,6 @@ fn dtls_gate_lock() -> std::sync::MutexGuard<'static, DtlsGate> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Разрешение на попытку рукопожатия: `None` — сейчас пробовать нельзя (сразу WRAP-SRTP).
-/// Слот зонда освобождается и через `Drop`: отменённая сессия не должна
-/// навсегда занять одно из немногих разрешений на DTLS.
 struct DtlsProbe {
     probe: bool,
 }
@@ -760,12 +708,6 @@ fn dtls_gate_acquire() -> Option<bool> {
     }
 }
 
-/// Итог попытки: обновляет состояние и решает, нужна ли строка в журнале.
-///
-/// `answered` — сервер вообще присылал датаграммы. Молчание означает, что DTLS
-/// до него не доходит (порт/мост), и это приговор сразу. А вот отказ при живом
-/// обмене чаще всего временный: VK-мост ограничивает частоту рукопожатий, и
-/// следующая попытка через несколько секунд проходит нормально.
 fn dtls_gate_finish(succeeded: bool, answered: bool) -> DtlsFinish {
     let now = tokio::time::Instant::now();
     let mut gate = dtls_gate_lock();
@@ -823,7 +765,6 @@ fn dtls_gate_finish(succeeded: bool, answered: bool) -> DtlsFinish {
 
 struct DtlsFinish {
     report_failure: bool,
-    /// Сколько попыток подавлено с прошлого сообщения: они попадут в одну строку.
     suppressed: u32,
     became_available: bool,
 }
@@ -931,13 +872,6 @@ fn install_wrap_ciphers(shared: &Arc<TransportShared>, config: &SessionConfig) -
     Ok(())
 }
 
-/// Быстрый отказ.
-///
-/// Если сервер явно не хочет DTLS — присылает фатальный alert или отвечает не
-/// DTLS-записью, — дальше ждать бессмысленно: полный таймаут (девять секунд) на
-/// каждом воркере превращался в «VPN долго думает, потом кое-как подключается».
-/// Теперь такая попытка завершается сразу и отдаёт управление WRAP-SRTP,
-/// который работает и без DTLS.
 fn is_explicit_dtls_refusal(packet: &[u8]) -> bool {
     const DTLS_RECORD_HEADER: usize = 13;
     const CONTENT_TYPE_ALERT: u8 = 21;
@@ -1383,7 +1317,6 @@ pub async fn run_session(
     result
 }
 
-/// A worker seated in the server's Jitsi room: the room stands in for the TURN allocation, the rest is unchanged.
 async fn run_room_session(
     mut config: SessionConfig,
     room: Arc<crate::jitsi_room::RoomTarget>,
@@ -1650,14 +1583,6 @@ async fn run_allocated_session(
     Ok(config_delivered)
 }
 
-/// Пора ли рвать сессию из-за тишины.
-///
-/// Вынесено из цикла, чтобы правило можно было проверить тестом: именно здесь
-/// раньше считался мёртвым исправный путь (keepalive не уходил при нагрузке).
-///
-/// * сервер отвечает эхом — тишина дольше [SILENCE_LIMIT_ECHOED] уже подозрительна;
-/// * эха нет — сравниваем с последней отправкой данных: пустой туннель ничего
-///   не ждёт, а если всё отправленное уже получило ответ, путь жив.
 fn silence_is_fatal(echoed: bool, quiet_ms: u64, now_ms: u64, sent_ms: u64, inbound_ms: u64) -> bool {
     let limit = if echoed {
         SILENCE_LIMIT_ECHOED
@@ -1676,17 +1601,6 @@ fn silence_is_fatal(echoed: bool, quiet_ms: u64, now_ms: u64, sent_ms: u64, inbo
     sent_ms > inbound_ms
 }
 
-/// Сторож тишины.
-///
-/// Раньше сессия жила до первого исключения в приёме или отправке. Если путь
-/// через звонок тихо умирал (а датаграммы просто перестают приходить), ошибки
-/// не было ни одной: клиент писал в пустоту, приложение показывало «0 из N»
-/// при формально живом туннеле, и помочь мог только перезапуск.
-///
-/// Здесь сессия сама замечает, что ответов нет слишком долго, и возвращает
-/// ошибку — воркер пересоздаёт поток. Пока сервер отвечает эхом на keepalive,
-/// порог короткий; без эха (старый сервер) — длинный, чтобы пустой туннель
-/// не переподключался зря.
 async fn watch_silence(
     shared: Arc<TransportShared>,
     worker: usize,
