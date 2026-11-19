@@ -227,7 +227,7 @@ object VkAutoCallsManager {
     }
 
     private fun log(key: String, message: String, priority: Int, isError: Boolean) {
-        if (!TunnelManager.isLoggingEnabled) return
+        if (!TunnelManager.isLoggingEnabled && key != "vk_call_created_progress") return
         TunnelManager.updateLog(key, message, priority, isError)
         synchronized(pendingLogsLock) {
             pendingLogs.add(PendingLog(key, message, priority, isError))

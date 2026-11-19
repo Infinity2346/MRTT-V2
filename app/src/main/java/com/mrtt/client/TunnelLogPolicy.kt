@@ -1,12 +1,10 @@
 package com.mrtt.client
 
 object TunnelLogPolicy {
-    fun isAllowedWhenInactiveLogging(key: String, isError: Boolean, level: LogLevel?): Boolean {
-        if (isError || level == LogLevel.ERR || key == "ready" || key == "stats") return true
-        // Полный журнал MAX нужен и при выключенных подробных логах: именно
-        // по нему ищется место обрыва.
-        return maxVerbose && (key.startsWith("max_step_") || key.startsWith("max_auth_diag"))
-    }
+    fun isAllowedWhenInactiveLogging(key: String, message: String): Boolean =
+        (key == "vk_js_call_progress" && message.contains("Звонок создан", ignoreCase = true)) ||
+            key == "vk_call_created_progress" ||
+            key == "workers_done"
 
     @Volatile
     var maxVerbose: Boolean = false

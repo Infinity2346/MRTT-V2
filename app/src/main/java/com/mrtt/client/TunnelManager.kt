@@ -1368,7 +1368,7 @@ object TunnelManager {
     ) {
         if (identity != null && !isCurrent(identity)) return
         FullLog.add(if (isError) "ошибка" else "приложение", message)
-        if (!isLoggingEnabled && !TunnelLogPolicy.isAllowedWhenInactiveLogging(key, isError, level)) return
+        if (!isLoggingEnabled && !TunnelLogPolicy.isAllowedWhenInactiveLogging(key, message)) return
         val cleanMessage = withoutLogStickers(message).take(MAX_LOG_MESSAGE_LENGTH)
         if (cleanMessage.isEmpty()) return
         val pendingKey = "${identity?.generation ?: 0L}:$key:$priority:$isError:${level?.name.orEmpty()}"
@@ -2188,7 +2188,10 @@ object TunnelManager {
                         identity.lastProcessDiagnostic = lastDiagnostic
                     }
 
-                    if (!isLoggingEnabled && !isCritical) {
+                    if (!isLoggingEnabled && !isCritical &&
+                        !lineTrim.contains("Звонок создан", ignoreCase = true) &&
+                        !lineTrim.contains("[КЛИЕНТ] Все воркеры завершены", ignoreCase = true)
+                    ) {
                         return@forEachLine
                     }
 
@@ -2402,6 +2405,9 @@ object TunnelManager {
                         }
                         lineTrim.contains("Рукопожатие...") ->
                             updateProcessLog(identity, "peer_handshake", "Рукопожатие...", 65, false)
+
+                        lineTrim.contains("[КЛИЕНТ] Все воркеры завершены", ignoreCase = true) ->
+                            updateProcessLog(identity, "workers_done", "[OK] Всё готово ✓", 19, false, LogLevel.OK)
 
                         isError -> {
                             val errorKey = when {

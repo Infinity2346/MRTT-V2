@@ -74,14 +74,30 @@ class TunnelLogPolicyTest {
     }
 
     @Test
-    fun inactiveLoggingKeepsOnlyReadyStatsAndErrors() {
-        assertTrue(TunnelLogPolicy.isAllowedWhenInactiveLogging("ready", false, LogLevel.OK))
-        assertTrue(TunnelLogPolicy.isAllowedWhenInactiveLogging("stats", false, LogLevel.NET))
-        assertTrue(TunnelLogPolicy.isAllowedWhenInactiveLogging("turn_error", true, LogLevel.ERR))
-        assertTrue(TunnelLogPolicy.isAllowedWhenInactiveLogging("general_error", true, null))
-        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("turn_refresh_status", false, LogLevel.LOG))
-        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("wrap_status", false, LogLevel.OK))
-        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("vk_js_call_progress", false, LogLevel.OK))
+    fun inactiveLoggingKeepsOnlyCallCreatedAndCompletion() {
+        assertTrue(
+            TunnelLogPolicy.isAllowedWhenInactiveLogging(
+                "vk_js_call_progress",
+                "[MAX] Звонок создан ✓",
+            ),
+        )
+        assertTrue(
+            TunnelLogPolicy.isAllowedWhenInactiveLogging(
+                "vk_call_created_progress",
+                "[OK] Звонок VK создан ✓",
+            ),
+        )
+        assertTrue(TunnelLogPolicy.isAllowedWhenInactiveLogging("workers_done", "[OK] Всё готово ✓"))
+        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("ready", "[OK] Готово"))
+        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("stats", "[СЕТЬ] Активных: 1"))
+        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("turn_error", "Ошибка"))
+        assertFalse(TunnelLogPolicy.isAllowedWhenInactiveLogging("wrap_status", "Свёртка"))
+        assertFalse(
+            TunnelLogPolicy.isAllowedWhenInactiveLogging(
+                "vk_js_call_progress",
+                "[VK JS] Владелец вышел из звонка ✓",
+            ),
+        )
     }
 
     @Test

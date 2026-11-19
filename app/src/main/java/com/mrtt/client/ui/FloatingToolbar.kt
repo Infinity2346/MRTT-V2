@@ -66,6 +66,7 @@ fun FloatingToolbar(
         initialValue = MrttConstants.VkAuth.MODE_CALLS,
     )
     val tunnelRunning by TunnelManager.running.collectAsStateWithLifecycle()
+    val loggingEnabled by settingsStore.loggingEnabled.collectAsStateWithLifecycle(initialValue = true)
     val selectedTurnSubnet by settingsStore.selectedTurnSubnet.collectAsStateWithLifecycle(
         initialValue = "",
     )
@@ -251,6 +252,15 @@ fun FloatingToolbar(
                         isDark = isDarkTheme,
                         onSelected = onStyleChange,
                         modifier = Modifier.padding(vertical = 6.dp),
+                    )
+
+                    MrttSettingRow(
+                        title = "Логи",
+                        checked = loggingEnabled,
+                        onCheckedChange = { enabled ->
+                            TunnelManager.isLoggingEnabled = enabled
+                            scope.launch { settingsStore.saveLoggingEnabled(enabled) }
+                        },
                     )
 
                     MrttSettingRow(

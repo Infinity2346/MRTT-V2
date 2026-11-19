@@ -24,7 +24,7 @@ internal object FullLog {
     fun redact(text: String): String = secrets.fold(text) { acc, (pattern, replacement) -> acc.replace(pattern, replacement) }
 
     fun add(source: String, line: String) {
-        if (line.isBlank()) return
+        if (line.isBlank() || !TunnelManager.isLoggingEnabled) return
         val body = redact(line.trim()).take(1000)
         val now = System.currentTimeMillis()
         synchronized(lines) {

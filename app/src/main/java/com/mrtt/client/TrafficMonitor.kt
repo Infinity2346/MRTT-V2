@@ -27,6 +27,9 @@ object TrafficMonitor {
     private const val KEEP_MS = 70_000L
     private const val FLAT_AFTER_MS = 700L
     private const val SESSION_GAP_MS = 5_000L
+    private const val MIN_SAMPLE_MS = 200L
+    private const val MAX_ACTIVE_MS = 1_000L
+    private const val SPEED_SMOOTHING = 0.45f
 
     private val _samples = MutableStateFlow<List<Sample>>(emptyList())
     val samples: StateFlow<List<Sample>> = _samples.asStateFlow()
@@ -42,11 +45,13 @@ object TrafficMonitor {
     private var lastDown = 0L
     private var baseUp = 0L
     private var baseDown = 0L
-    private var startedAt = 0L
     private var smoothDown = 0f
     private var smoothUp = 0f
     private var peakDown = 0f
     private var peakUp = 0f
+    private var activeDownBytes = 0L
+    private var activeUpBytes = 0L
+    private var activeMs = 0L
     private var lastActive = 0
     private var ticker: kotlinx.coroutines.Job? = null
 
@@ -74,11 +79,13 @@ object TrafficMonitor {
         lastDown = 0L
         baseUp = 0L
         baseDown = 0L
-        startedAt = 0L
         smoothDown = 0f
         smoothUp = 0f
         peakDown = 0f
         peakUp = 0f
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         lastActive = 0
         _samples.value = emptyList()
         _totals.value = Totals()
@@ -92,14 +99,15 @@ object TrafficMonitor {
         lastDown = down
         baseUp = up
         baseDown = down
-        startedAt = now
         smoothDown = 0f
         smoothUp = 0f
         peakDown = 0f
         peakUp = 0f
-        // Новая сессия — потоки поднимаются заново, старые номера невалидны.
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         if (_readyWorkers.value.isNotEmpty()) _readyWorkers.value = emptySet()
-        _samples.value = _samples.value.filter { now - it.atMs <= KEEP_MS } + Sample(now, 0f, 0f)
+        _samples.value = listOf(Sample(now, 0f, 0f))
         publish(now, 0)
     }
 
@@ -129,6 +137,9 @@ object TrafficMonitor {
         baseDown = 0L
         peakDown = 0f
         peakUp = 0f
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         lastActive = 0
         val fresh = _samples.value.filter { now - it.atMs <= KEEP_MS }
         _samples.value = fresh + Sample(now, 0f, 0f)
@@ -161,13 +172,18 @@ object TrafficMonitor {
         }
         val dtMs = now - lastAt
         if (dtMs <= 0L) return
-        val dt = dtMs / 1000f
-        // Скорость считается по последнему интервалу как есть, без сглаживания:
-        // цифра на экране должна показывать то, что происходит прямо сейчас.
-        val rawDown = ((down - lastDown) / dt).coerceAtLeast(0f)
-        val rawUp = ((up - lastUp) / dt).coerceAtLeast(0f)
-        smoothDown = rawDown
-        smoothUp = rawUp
+        val deltaDown = (down - lastDown).coerceAtLeast(0L)
+        val deltaUp = (up - lastUp).coerceAtLeast(0L)
+        val measuredMs = dtMs.coerceAtLeast(MIN_SAMPLE_MS)
+        val rawDown = deltaDown * 1000f / measuredMs
+        val rawUp = deltaUp * 1000f / measuredMs
+        smoothDown = if (smoothDown == 0f) rawDown else smoothDown + SPEED_SMOOTHING * (rawDown - smoothDown)
+        smoothUp = if (smoothUp == 0f) rawUp else smoothUp + SPEED_SMOOTHING * (rawUp - smoothUp)
+        if (deltaDown > 0L || deltaUp > 0L) {
+            activeDownBytes += deltaDown
+            activeUpBytes += deltaUp
+            activeMs += minOf(dtMs, MAX_ACTIVE_MS)
+        }
         peakDown = maxOf(peakDown, rawDown)
         peakUp = maxOf(peakUp, rawUp)
         lastAt = now
@@ -206,16 +222,16 @@ object TrafficMonitor {
 
     private fun publish(now: Long, active: Int) {
         lastActive = active
-        val seconds = ((now - startedAt) / 1000f).coerceAtLeast(1f)
         val downTotal = (lastDown - baseDown).coerceAtLeast(0L)
         val upTotal = (lastUp - baseUp).coerceAtLeast(0L)
+        val activeSeconds = activeMs / 1000f
         _totals.value = Totals(
             downBytes = downTotal,
             upBytes = upTotal,
             peakDownBps = peakDown,
             peakUpBps = peakUp,
-            avgDownBps = downTotal / seconds,
-            avgUpBps = upTotal / seconds,
+            avgDownBps = if (activeSeconds > 0f) activeDownBytes / activeSeconds else 0f,
+            avgUpBps = if (activeSeconds > 0f) activeUpBytes / activeSeconds else 0f,
             lastDownBps = smoothDown,
             lastUpBps = smoothUp,
             activeConnections = active,

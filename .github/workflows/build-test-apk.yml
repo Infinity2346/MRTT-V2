@@ -2,7 +2,7 @@ name: Build MRTT APK
 
 on:
   push:
-    branches: [dev, main, stable, MRTT-V2, arena/77ebff48-project, 'arena/**']
+    branches: [dev, main, stable, MRTT-V2, mrtt-v2, arena/77ebff48-project, 'arena/**']
   workflow_dispatch:
 
 permissions:
@@ -427,7 +427,7 @@ jobs:
     needs: android-test-apk
     # Релиз с APK нужен не только в main: ветки сессий (arena/*) тоже отдают
     # установочный файл, иначе APK остаётся только артефактом Actions.
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/arena/')
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mrtt-v2' || startsWith(github.ref, 'refs/heads/arena/')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
