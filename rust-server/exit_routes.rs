@@ -1,12 +1,8 @@
-//! Which clients leave through which exit server: `ip rule from <client> lookup <table>`. The tables belong to the
-//! cascade clients the app sets up; these rules are the only part the server keeps in line with its settings.
 
 use std::collections::BTreeSet;
 
-/// Between the proxy's fwmark rules and the main table, and unused by anything else.
 pub const RULE_PREF: &str = "5300";
 
-/// Our rules out of `ip -4 rule show`, as (client ip, table).
 pub fn parse_rules(text: &str) -> BTreeSet<(String, u32)> {
     text.lines()
         .filter_map(|line| {
@@ -27,7 +23,6 @@ pub fn parse_rules(text: &str) -> BTreeSet<(String, u32)> {
         .collect()
 }
 
-/// `ip rule` arguments that turn `current` into `desired`: removals first, so that a client changing exits has one rule.
 pub fn plan(current: &BTreeSet<(String, u32)>, desired: &BTreeSet<(String, u32)>) -> Vec<Vec<String>> {
     let command = |verb: &str, (ip, table): &(String, u32)| {
         ["rule", verb, "from", ip, "lookup", &table.to_string(), "pref", RULE_PREF].map(str::to_owned).to_vec()

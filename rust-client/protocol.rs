@@ -32,8 +32,6 @@ pub fn config_request(
     format!("GETCONF:{local_port}|{password}|{generation_id}|{salt}|{worker_id}|{desired_count}")
 }
 
-/// Хвост GETCONF с устройством: `|device_id|device_name`. Пустой device_id — сервер
-/// считает клиента старым (одно общее «устройство» на ссылку).
 pub fn device_fields(device_id: &str, device_name: &str) -> String {
     fn clean(raw: &str, max_len: usize, allow_space: bool) -> String {
         raw.trim()
@@ -51,7 +49,6 @@ pub fn device_fields(device_id: &str, device_name: &str) -> String {
     format!("|{device_id}|{}", clean(device_name, 40, true))
 }
 
-/// Устройство задаёт приложение через окружение процесса.
 pub fn process_device_fields() -> &'static str {
     static FIELDS: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
         device_fields(

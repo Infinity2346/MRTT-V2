@@ -191,7 +191,6 @@ private fun LogsTerminal() {
     }
 }
 
-/** Полный журнал с данными устройства: пароли и токены уже затёрты, его можно отправить кому угодно. */
 private fun shareFullLog(context: Context) {
     val text = buildString {
         appendLine("MRTT: полный лог")

@@ -25,7 +25,6 @@ object DeployManager {
     }
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
-    /** Идущие установки и удаления по id сервера. */
     val jobs = MutableStateFlow<Map<String, DeployJob>>(emptyMap())
     val isDeploying = MutableStateFlow(false)
 
@@ -52,10 +51,6 @@ object DeployManager {
         } catch (_: Exception) { }
     }
 
-    /**
-     * Метка запуска или null, если на этом сервере уже что-то идёт. По метке прерванная работа, пока она завершается,
-     * не трогает новую установку на том же сервере.
-     */
     @Synchronized
     fun startDeploy(id: String, title: String): Long? {
         val now = System.currentTimeMillis()
@@ -71,7 +66,6 @@ object DeployManager {
         return now
     }
 
-    /** Без [token] останавливает то, что идёт сейчас. Уже остановленное не трогает: причина остаётся первой. */
     @Synchronized
     fun stopDeploy(id: String, result: String = "", token: Long? = null) {
         val job = jobs.value[id] ?: return
@@ -97,7 +91,6 @@ object DeployManager {
 
     fun lastResult(id: String): String = results[id].orEmpty()
 
-    /** Сессия отменённой работы сразу закрывается, иначе подключение, начатое до отмены, продолжило бы установку. */
     @Synchronized
     fun setSession(id: String, token: Long, session: java.io.Closeable?) {
         val current = jobs.value[id]?.startedAt == token

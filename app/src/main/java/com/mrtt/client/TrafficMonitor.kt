@@ -6,12 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Скорость туннеля в реальном времени. Rust-клиент присылает нарастающие счётчики байт (событие STATS),
- * здесь они превращаются в скорость за интервал, историю для графика и итоги сессии.
- */
 object TrafficMonitor {
-    /** Одна точка графика: скорость в байтах в секунду. */
     data class Sample(val atMs: Long, val downBps: Float, val upBps: Float)
 
     data class Totals(
@@ -30,14 +25,11 @@ object TrafficMonitor {
     // Держим чуть больше окна: графику не нужны точки, которых он не рисует,
     // а на слабом телефоне список из двух минут — лишняя работа на каждый кадр.
     private const val KEEP_MS = 70_000L
-    /** Если счётчики не менялись дольше этого, скорость честно ноль. */
     private const val FLAT_AFTER_MS = 700L
-    /**
-     * Разрыв больше этого — это уже другая сессия, а не пауза в трафике:
-     * туннель переподнимался, пока приложение было в фоне. Цифры «с прошлого
-     * раза» после такого разрыва показывать нельзя.
-     */
     private const val SESSION_GAP_MS = 5_000L
+    private const val MIN_SAMPLE_MS = 200L
+    private const val MAX_ACTIVE_MS = 1_000L
+    private const val SPEED_SMOOTHING = 0.45f
 
     private val _samples = MutableStateFlow<List<Sample>>(emptyList())
     val samples: StateFlow<List<Sample>> = _samples.asStateFlow()
@@ -46,7 +38,6 @@ object TrafficMonitor {
     val totals: StateFlow<Totals> = _totals.asStateFlow()
 
     private val _readyWorkers = MutableStateFlow<Set<Int>>(emptySet())
-    /** Номера воркеров, у которых поток поднят (пришло событие Ready). */
     val readyWorkers: StateFlow<Set<Int>> = _readyWorkers.asStateFlow()
 
     private var lastAt = 0L
@@ -54,18 +45,16 @@ object TrafficMonitor {
     private var lastDown = 0L
     private var baseUp = 0L
     private var baseDown = 0L
-    private var startedAt = 0L
     private var smoothDown = 0f
     private var smoothUp = 0f
     private var peakDown = 0f
     private var peakUp = 0f
+    private var activeDownBytes = 0L
+    private var activeUpBytes = 0L
+    private var activeMs = 0L
     private var lastActive = 0
     private var ticker: kotlinx.coroutines.Job? = null
 
-    /**
-     * Раз в 250 мс пересчитывать «сейчас». Без этого подписи висели на
-     * последнем значении, пока Rust не пришлёт следующий тик.
-     */
     @Synchronized
     fun startTicking() {
         if (ticker?.isActive == true) return
@@ -90,22 +79,19 @@ object TrafficMonitor {
         lastDown = 0L
         baseUp = 0L
         baseDown = 0L
-        startedAt = 0L
         smoothDown = 0f
         smoothUp = 0f
         peakDown = 0f
         peakUp = 0f
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         lastActive = 0
         _samples.value = emptyList()
         _totals.value = Totals()
         _readyWorkers.value = emptySet()
     }
 
-    /**
-     * Начать новую сессию тарифа: счётчики пошли заново (туннель переподнялся
-     * внутри того же процесса). Итоги и средние считаются от нуля, история
-     * графика сохраняется — она про то, что было, а не про «этот тариф».
-     */
     @Synchronized
     fun beginSession(up: Long = 0L, down: Long = 0L, now: Long = SystemClock.elapsedRealtime()) {
         lastAt = now
@@ -113,14 +99,15 @@ object TrafficMonitor {
         lastDown = down
         baseUp = up
         baseDown = down
-        startedAt = now
         smoothDown = 0f
         smoothUp = 0f
         peakDown = 0f
         peakUp = 0f
-        // Новая сессия — потоки поднимаются заново, старые номера невалидны.
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         if (_readyWorkers.value.isNotEmpty()) _readyWorkers.value = emptySet()
-        _samples.value = _samples.value.filter { now - it.atMs <= KEEP_MS } + Sample(now, 0f, 0f)
+        _samples.value = listOf(Sample(now, 0f, 0f))
         publish(now, 0)
     }
 
@@ -129,11 +116,6 @@ object TrafficMonitor {
         if (worker > 0) _readyWorkers.value = _readyWorkers.value + worker
     }
 
-    /**
-     * Воркер перестал быть готовым: порвал поток, VPN выключили или туннель
-     * переподнимается. Раньше набор только пополнялся, и на экране «Соединения»
-     * точки оставались светлыми даже после выключения VPN.
-     */
     @Synchronized
     fun workerNotReady(worker: Int) {
         if (worker > 0 && _readyWorkers.value.contains(worker)) {
@@ -141,10 +123,6 @@ object TrafficMonitor {
         }
     }
 
-    /**
-     * Туннель выключен. Гасим весь индикатор потоков: раз подключения нет, ни
-     * один поток не «поднят», и ни одна точка не должна светиться.
-     */
     @Synchronized
     fun onTunnelStopped(now: Long = SystemClock.elapsedRealtime()) {
         if (_readyWorkers.value.isNotEmpty()) _readyWorkers.value = emptySet()
@@ -159,6 +137,9 @@ object TrafficMonitor {
         baseDown = 0L
         peakDown = 0f
         peakUp = 0f
+        activeDownBytes = 0L
+        activeUpBytes = 0L
+        activeMs = 0L
         lastActive = 0
         val fresh = _samples.value.filter { now - it.atMs <= KEEP_MS }
         _samples.value = fresh + Sample(now, 0f, 0f)
@@ -191,13 +172,18 @@ object TrafficMonitor {
         }
         val dtMs = now - lastAt
         if (dtMs <= 0L) return
-        val dt = dtMs / 1000f
-        // Скорость считается по последнему интервалу как есть, без сглаживания:
-        // цифра на экране должна показывать то, что происходит прямо сейчас.
-        val rawDown = ((down - lastDown) / dt).coerceAtLeast(0f)
-        val rawUp = ((up - lastUp) / dt).coerceAtLeast(0f)
-        smoothDown = rawDown
-        smoothUp = rawUp
+        val deltaDown = (down - lastDown).coerceAtLeast(0L)
+        val deltaUp = (up - lastUp).coerceAtLeast(0L)
+        val measuredMs = dtMs.coerceAtLeast(MIN_SAMPLE_MS)
+        val rawDown = deltaDown * 1000f / measuredMs
+        val rawUp = deltaUp * 1000f / measuredMs
+        smoothDown = if (smoothDown == 0f) rawDown else smoothDown + SPEED_SMOOTHING * (rawDown - smoothDown)
+        smoothUp = if (smoothUp == 0f) rawUp else smoothUp + SPEED_SMOOTHING * (rawUp - smoothUp)
+        if (deltaDown > 0L || deltaUp > 0L) {
+            activeDownBytes += deltaDown
+            activeUpBytes += deltaUp
+            activeMs += minOf(dtMs, MAX_ACTIVE_MS)
+        }
         peakDown = maxOf(peakDown, rawDown)
         peakUp = maxOf(peakUp, rawUp)
         lastAt = now
@@ -208,11 +194,6 @@ object TrafficMonitor {
         publish(now, active)
     }
 
-    /**
-     * Приложение вернулось на экран. Пока оно было в фоне, счётчики могли
-     * остановиться — тогда на экране висела скорость прошлого тарифа. Если
-     * свежих замеров нет, показываем честный ноль, а не память о прошлом.
-     */
     @Synchronized
     fun onAppResumed(now: Long = SystemClock.elapsedRealtime()) {
         if (lastAt == 0L) return
@@ -223,10 +204,6 @@ object TrafficMonitor {
         publish(now, lastActive)
     }
 
-    /**
-     * Тик без нового замера: обновляем «сейчас», чтобы цифры не висели прошлой
-     * скоростью, когда трафика нет.
-     */
     @Synchronized
     fun onIdleTick(now: Long = SystemClock.elapsedRealtime()) {
         if (lastAt == 0L) return
@@ -245,23 +222,22 @@ object TrafficMonitor {
 
     private fun publish(now: Long, active: Int) {
         lastActive = active
-        val seconds = ((now - startedAt) / 1000f).coerceAtLeast(1f)
         val downTotal = (lastDown - baseDown).coerceAtLeast(0L)
         val upTotal = (lastUp - baseUp).coerceAtLeast(0L)
+        val activeSeconds = activeMs / 1000f
         _totals.value = Totals(
             downBytes = downTotal,
             upBytes = upTotal,
             peakDownBps = peakDown,
             peakUpBps = peakUp,
-            avgDownBps = downTotal / seconds,
-            avgUpBps = upTotal / seconds,
+            avgDownBps = if (activeSeconds > 0f) activeDownBytes / activeSeconds else 0f,
+            avgUpBps = if (activeSeconds > 0f) activeUpBytes / activeSeconds else 0f,
             lastDownBps = smoothDown,
             lastUpBps = smoothUp,
             activeConnections = active,
         )
     }
 
-    /** «12,4 Мбит/с» — скорость в привычных единицах. */
     fun formatSpeed(bytesPerSecond: Float): String {
         val bits = bytesPerSecond * 8f
         return when {

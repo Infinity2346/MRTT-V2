@@ -8,13 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
 
-/**
- * Вход через приложение ВК по протоколу VK ID.
- *
- * Проверяем то, что ломалось на живом телефоне: разбор возврата
- * `vk7793118://vk.ru/blank.html?code=…`, проверку `state`, параметры обмена
- * кода на токен и форму `code_challenge`.
- */
 class VkIdOAuthTest {
 
     @Test

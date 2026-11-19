@@ -29,10 +29,6 @@ const URGENCY_FLUSH_SYSCALLS: usize = 1;
 pub const UDP_RECV_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 pub const UDP_SEND_BUFFER_BYTES: usize = 1024 * 1024;
 pub const RESERVED_CONTROL_SLOTS: usize = 32;
-/// Гарантированное окно клиента в пакетах: даже когда клиентов много, у каждого своя доля, и его скорость
-/// не падает из-за того, что соседи тоже качают. 128 пакетов при 40 мс RTT ≈ 34 Мбит/с — прежние 64
-/// пакета (≈17 Мбит/с) были потолком одного клиента на дальнем канале. Окно не меньше полной порции
-/// чтения TUN, иначе хвост каждой пачки отбрасывался.
 pub const MIN_CLIENT_SLOTS: usize = 128;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -16,17 +16,8 @@ const val UPDATE_DIALOG_ACTION_UPDATE = MrttConstants.Update.ACTION_UPDATE
 private const val UPDATE_LOG_TAG = MrttConstants.General.APP_NAME
 private const val GITHUB_RELEASES_URL = MrttConstants.Update.GITHUB_RELEASES_URL
 private const val GITHUB_API_RATE_LIMIT_FALLBACK_MS = MrttConstants.Timeouts.UPDATE_RATE_LIMIT_COOLDOWN_MS
-/**
- * Разбирает версию в любом виде, который встречается у нас: `1.0-beta1.83`
- * (так называет сборку gradle), `mrtt-1.0-beta1-83` (так называется тег релиза)
- * и обычное `2.5.1`.
- *
- * Группы: 1 — числа версии, 2 — метка пре-релиза (`beta`), 3 — её номер,
- * 4 — номер сборки после точки или дефиса.
- */
 private val VERSION_PATTERN = Regex("""(\d+(?:\.\d+)*)(?:-([A-Za-z]+)(\d*))?(?:[.-](\d+))?""")
 
-/** Разобранная версия: числа, пре-релиз (null — обычный релиз) и номер сборки. */
 internal data class ParsedVersion(
     val numbers: List<Int>,
     val preNumber: Int?,
@@ -81,14 +72,6 @@ suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo
 internal fun isLegacyRelease(versionTag: String): Boolean =
     versionTag.contains("legacy", ignoreCase = true)
 
-/**
- * Сравнивает версии по числам, затем по пре-релизу, затем по номеру сборки.
- *
- * Раньше сравнивалась только строка вида `1.0-beta1`, а тег релиза
- * `mrtt-1.0-beta1-83` не разбирался вовсе: считалось, что пре-релиза в нём нет,
- * и значит он новее любой установленной сборки. Отсюда и «доступно обновление»
- * на уже установленной последней версии.
- */
 fun isNewerVersion(local: String, remote: String): Boolean {
     val remoteParsed = parseVersion(remote) ?: return false
     val localParsed = parseVersion(local) ?: ParsedVersion(emptyList(), null, 0)
@@ -112,7 +95,6 @@ fun isNewerVersion(local: String, remote: String): Boolean {
     }
 }
 
-/** Разбор версии; `null` — строку не понять, сравнивать не с чем. */
 internal fun parseVersion(version: String): ParsedVersion? {
     val match = VERSION_PATTERN.find(version.trim()) ?: return null
     val numbers = match.groupValues[1].split('.').mapNotNull { it.toIntOrNull() }
@@ -123,10 +105,6 @@ internal fun parseVersion(version: String): ParsedVersion? {
     return ParsedVersion(numbers, preNumber, build)
 }
 
-/**
- * Версия для человека: без служебного префикса репозитория и с номером сборки
- * через точку — `mrtt-1.0-beta1-83` → `1.0-beta1.83`.
- */
 internal fun displayVersion(version: String): String {
     val trimmed = version.trim()
     if (trimmed.isEmpty()) return ""

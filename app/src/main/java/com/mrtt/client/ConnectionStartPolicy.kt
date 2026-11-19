@@ -10,19 +10,11 @@ internal enum class ConnectionStartBlocker(val message: String) {
     Hashes("нет действующих VK хешей или VK токена"),
 }
 
-/**
- * Чей VK использовать: свой привязанный в приложении или из ссылки.
- *
- * Токен из ссылки — это аккаунт сервера: он приходит явно и должен работать
- * сразу, даже если в приложении остался старый вход в VK. Раньше свой аккаунт
- * перебивал ссылку, и подключение требовало «зайти в ВК в приложении».
- */
 internal fun shouldUseLinkVk(
     ownVkBound: Boolean,
     preferLinkHashes: Boolean,
     linkTokenPresent: Boolean,
     linkHashCount: Int,
-    /** Профиль подключён своим входом в VK («Авто ВК»): аккаунт сервера его не перебивает. */
     ownAutoJsMode: Boolean = false,
 ): Boolean = when {
     ownAutoJsMode && ownVkBound -> false

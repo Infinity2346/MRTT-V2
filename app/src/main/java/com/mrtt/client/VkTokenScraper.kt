@@ -8,30 +8,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-/**
- * Получение VK access token из сохранённой сессии (куки) и создание звонков.
- *
- * VK закрыл выдачу токена через OAuth-редирект `oauth.vk.ru/authorize` для веб-сессий,
- * поэтому используется тот же путь, что и в рабочих клиентах:
- *
- *   remixsid (куки) → POST login.vk.ru/?act=web_token → web access_token
- *                   → POST api.vk.ru/method/users.get  → id пользователя
- *                   → POST api.vk.ru/method/calls.start → call_id + join_link
- *                   → POST api.vk.ru/method/calls.forceFinish
- *
- * Пользователь входит один раз в WebView, дальше токен берётся из кук сам при каждом подключении.
- */
 internal object VkTokenScraper {
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 15_000
 
-    /** Временный токен из сохранённой сессии VK: живёт только в памяти на время подключения. */
     suspend fun tokenFromSession(context: android.content.Context, cookies: String): String {
         if (cookies.isBlank()) return ""
         return runCatching { fetchAccessToken(cookies) }.getOrNull().orEmpty()
     }
 
-    /** Обменивает куки сессии на access token веб-приложения VK. */
     suspend fun fetchAccessToken(
         cookies: String,
         userAgent: String = MrttConstants.VkAutoHash.WEB_USER_AGENT,
@@ -55,20 +40,12 @@ internal object VkTokenScraper {
         token
     }
 
-    /** Токены, полученные по протоколу VK ID (вход через приложение ВК). */
     internal data class VkIdTokens(
         val accessToken: String,
         val refreshToken: String,
         val userId: String,
     )
 
-    /**
-     * Обмен кода из возврата `vk7793118://vk.ru/blank.html?code=…` на токены.
-     *
-     * Это официальный путь входа через приложение ВК: куки приложения нам
-     * недоступны, а код подтверждения — доступен. `code_verifier` из PKCE
-     * доказывает, что код обменивает то же приложение, которое его запросило.
-     */
     suspend fun exchangeVkIdCode(
         code: String,
         deviceId: String,
@@ -84,12 +61,6 @@ internal object VkTokenScraper {
         tokensOf(response, "VK ID: код не обменялся на токен")
     }
 
-    /**
-     * Обновление токена по `refresh_token` — без нового входа.
-     *
-     * Живёт здесь же, потому что формат ответа тот же, а вызывать это будет
-     * запуск туннеля: токен VK ID живёт около часа, а туннель — дольше.
-     */
     suspend fun refreshVkIdToken(refreshToken: String, deviceId: String = ""): VkIdTokens =
         withContext(Dispatchers.IO) {
             require(refreshToken.isNotBlank()) { "нет refresh_token" }
@@ -121,10 +92,6 @@ internal object VkTokenScraper {
         return VkIdTokens(accessToken = token, refreshToken = refresh, userId = userId.trim())
     }
 
-    /**
-     * POST формы на `id.vk.ru/oauth2/auth`. Без `Origin`/`Referer` и без кук:
-     * это обмен кода, а не запрос к веб-странице, и лишние заголовки тут мешают.
-     */
     private fun postFormForToken(
         endpoint: String,
         fields: List<Pair<String, String>>,
@@ -159,10 +126,6 @@ internal object VkTokenScraper {
         }
     }
 
-    /**
-     * Оставляет в куках только то, что реально нужно: без служебных ключей вида `__cf_bm`
-     * заголовок короче и не упирается в лимит заголовков WebView.
-     */
     internal fun trimCookieHeader(cookies: String): String = cookies
         .split(';')
         .map(String::trim)
@@ -170,7 +133,6 @@ internal object VkTokenScraper {
         .distinctBy { it.substringBefore('=').lowercase() }
         .joinToString("; ")
 
-    /** Идентификатор пользователя по токену: нужен для `calls.start` (`peer_id`). */
     suspend fun fetchUserId(
         token: String,
         userAgent: String = MrttConstants.VkAutoHash.WEB_USER_AGENT,
@@ -189,10 +151,6 @@ internal object VkTokenScraper {
         id.toString()
     }
 
-    /**
-     * POST формы с куками сессии или Bearer-токеном.
-     * Лишние заголовки не ставим: VK строит CSRF-проверку по Origin/Referer.
-     */
     private fun postForm(
         endpoint: String,
         fields: List<Pair<String, String>>,
@@ -236,7 +194,6 @@ internal object VkTokenScraper {
         }
     }
 
-    /** Текст ошибки VK, если она есть в ответе. */
     private fun apiErrorOf(json: JSONObject): String? {
         val error = json.optJSONObject("error") ?: return null
         if (error.length() == 0) return null

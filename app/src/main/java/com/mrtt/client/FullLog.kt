@@ -4,20 +4,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Полный журнал для отправки: все строки нативного клиента и приложения, без фильтров экрана «Логи».
- * Пароли, токены и ссылки подключения затираются, чтобы журналом можно было делиться.
- */
 internal object FullLog {
     private const val MAX_LINES = 4000
 
-    /**
-     * Строки нативного клиента попадают в журнал дважды: сначала как есть
-     * (`[клиент] …`), затем как сообщение приложения (`[приложение] …`), потому
-     * что приложение разбирает те же строки. Журнал выходил вдвое длиннее,
-     * поэтому повтор той же строки от приложения в пределах [DEDUPE_WINDOW_MS]
-     * не пишем. Строки самого клиента остаются всегда — по ним видно порядок шагов.
-     */
     private const val DEDUPE_WINDOW_MS = 1_000L
     private const val DEDUPE_MEMORY = 128
 
@@ -35,7 +24,7 @@ internal object FullLog {
     fun redact(text: String): String = secrets.fold(text) { acc, (pattern, replacement) -> acc.replace(pattern, replacement) }
 
     fun add(source: String, line: String) {
-        if (line.isBlank()) return
+        if (line.isBlank() || !TunnelManager.isLoggingEnabled) return
         val body = redact(line.trim()).take(1000)
         val now = System.currentTimeMillis()
         synchronized(lines) {

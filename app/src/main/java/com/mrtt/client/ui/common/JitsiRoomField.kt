@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.mrtt.client.ui.design.MrttShapes
 import com.mrtt.client.ui.utils.parseJitsiRoomInput
 
-/** Поле ссылки на конференцию Jitsi в стиле полей VK хешей: вставка из буфера и удаление. */
 @Composable
 internal fun JitsiRoomField(value: String, onValueChange: (String) -> Unit, label: String = "Ссылка на комнату Jitsi") {
     val context = LocalContext.current

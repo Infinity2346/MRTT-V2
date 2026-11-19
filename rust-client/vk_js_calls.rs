@@ -20,16 +20,11 @@ const DEFAULT_OK_API: &str = "https://calls.okcdn.ru/fb.do";
 const MAX_RESPONSE_BYTES: usize = 512 * 1024;
 pub const MAX_ACCOUNT_CREDENTIALS: usize = 15;
 
-/// Сколько последних выданных наборов помним для дедупликации. Неограниченная
-/// память ломала долгую сессию: каждый новый набор рано или поздно совпадал с
-/// выданным ранее, и воркер получал «креды недоступны» навсегда.
 const ISSUED_MEMORY: usize = 32;
 
 #[derive(Deserialize)]
 pub struct Bootstrap {
     pub token: String,
-    /// deviceId, на котором токен MAX выдан в браузере. Сервер MAX связывает
-    /// токен с устройством, поэтому по умолчанию поле пустое (VK его не шлёт).
     #[serde(default, rename = "deviceId")]
     pub device_id: String,
 }
@@ -49,7 +44,6 @@ pub struct CredentialBroker {
     access_token: String,
     conversation_id: String,
     backend: CallBackend,
-    /// Наборы, выданные недавно: очередь ограничена, старые забываются.
     issued_credentials: Arc<Mutex<Vec<[u8; 32]>>>,
 }
 
@@ -316,9 +310,6 @@ async fn open_account_session(
     })
 }
 
-/// Как `check_api_error`, но фатальные для звонка коды (951, 954, 9xxx) отдаёт
-/// типизированной `CallUnavailable`: выше по стеку по этому типу принимается
-/// решение пересоздать звонок, а не повторять запрос.
 fn check_call_error(value: &Value) -> Result<()> {
     let auth_code = json_error_code(value);
     if let Some(code) = auth_code

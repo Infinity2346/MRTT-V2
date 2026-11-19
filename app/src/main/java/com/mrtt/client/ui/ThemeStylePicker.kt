@@ -33,13 +33,6 @@ import androidx.compose.ui.unit.dp
 import com.mrtt.client.ui.design.MrttStyle
 import com.mrtt.client.ui.design.MrttStyles
 
-/**
- * Выбор стиля приложения.
- *
- * Стиль — это не только цвет кнопки: он меняет палитру целиком, поэтому в
- * списке сразу видно, как выглядит каждый вариант. Круглые чипы с превью
- * читаются быстрее, чем выпадающий список с названиями.
- */
 @Composable
 internal fun ThemeStylePicker(
     currentStyle: String,
@@ -148,7 +141,6 @@ private fun StyleChip(
     }
 }
 
-/** Небольшой образец палитры для других экранов (превью в настройках). */
 @Composable
 internal fun StyleSwatch(style: MrttStyle, isDark: Boolean, modifier: Modifier = Modifier) {
     val scheme = if (isDark) style.dark else style.light

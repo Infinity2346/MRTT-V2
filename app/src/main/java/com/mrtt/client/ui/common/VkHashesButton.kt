@@ -29,7 +29,6 @@ import com.mrtt.client.ui.design.MrttSizes
 import com.mrtt.client.ui.dialogs.HashesDialog
 import com.mrtt.client.ui.utils.stripVkUrlStatic
 
-/** Кнопка с шестью полями VK-хешей, как во вкладке «Транспорт». Значение хранится строкой через запятую. */
 @Composable
 internal fun VkHashesButton(value: String, onValueChange: (String) -> Unit) {
     val context = LocalContext.current

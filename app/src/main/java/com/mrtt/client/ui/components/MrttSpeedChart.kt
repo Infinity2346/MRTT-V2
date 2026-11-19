@@ -42,13 +42,8 @@ import com.mrtt.client.ui.design.LocalMrttStyle
 import com.mrtt.client.ui.design.MrttEffect
 import com.mrtt.client.ui.design.mrttEffectFor
 
-/** Как часто график сдвигает окно и перерисовывается. */
 private const val CHART_TICK_MS = 100L
 
-/**
- * Живой график скорости: «вниз» цветом акцента стиля, «вверх» — третичным. Окно — последние 60 секунд,
- * шкала подстраивается под пик. В неоновых стилях линии светятся, на конце бьётся точка.
- */
 @Composable
 fun MrttSpeedChart(
     modifier: Modifier = Modifier,
@@ -162,7 +157,6 @@ private fun DrawScope.drawSeries(points: List<Pair<Float, Float>>, color: Color,
     drawPath(line, color, style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
-/** Строка с текущей скоростью: стрелки в цветах графика. */
 @Composable
 fun MrttSpeedReadout(modifier: Modifier = Modifier) {
     val totals by TrafficMonitor.totals.collectAsStateWithLifecycle()
@@ -187,7 +181,6 @@ fun MrttSpeedReadout(modifier: Modifier = Modifier) {
     }
 }
 
-/** Компактный блок для главного экрана: цифры и график без лишнего. */
 @Composable
 fun MrttSpeedSparkline(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

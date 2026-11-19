@@ -120,8 +120,6 @@ impl FlowState {
         }
     }
 
-    /// Counts the packet and says whether the flow may stay pinned: a small UDP packet renews the pin only while
-    /// the flow fits in one stream.
     fn keeps_pin(&mut self, now: std::time::Instant, len: usize, small_udp: bool) -> bool {
         if now.saturating_duration_since(self.window_start) >= PIN_WINDOW {
             self.window_start = now;
@@ -151,9 +149,6 @@ fn transport_ports(packet: &[u8], offset: usize, proto: u8) -> (u16, u16) {
     }
 }
 
-/// Адреса и номера для TCP RST в ответ на сегмент: `(src, dst, seq, ack)`.
-/// RST идёт от сервера к клиенту, поэтому адреса меняются местами, а
-/// подтверждение считается по длине полезной нагрузки исходного сегмента.
 fn tcp_reset_targets(packet: &[u8]) -> Option<(SocketAddr, SocketAddr, u32, u32)> {
     let version = packet.first()? >> 4;
     let (tcp_start, total_len) = match version {
@@ -396,8 +391,6 @@ impl UplinkState {
         }
     }
 
-    /// Выбираем здоровый поток с наибольшим запасом токенов, обходя список
-    /// начиная с `cursor`. Токены здесь не списываются.
     fn choose_stream(&mut self, workers: &[WorkerEntry]) -> Option<usize> {
         let count = workers.len();
         if count == 0 {
@@ -428,11 +421,6 @@ impl UplinkState {
         best_idx
     }
 
-    /// Равномерное размазывание по здоровым потокам с per-flow порядком:
-    /// маленькие UDP-потоки (игры/голос) закрепляются за одним воркером, а
-    /// TCP/крупный UDP идёт берстами по 16 КБ и переезжает на другой воркер
-    /// только на границе берста. Внутри берста порядок пакетов сохраняется,
-    /// поэтому TCP не видит per-packet reordering, как в старом водопаде.
     fn select_deficit_waterfall(
         &mut self,
         workers: &[WorkerEntry],
@@ -953,7 +941,6 @@ impl Dispatcher {
     }
 
     #[inline(always)]
-    /// Round trip of a TCP SYN through the workers, past the direct relay: it must measure the tunnel. None without an answer.
     pub async fn probe_tunnel(&self, target: crate::tunnel_probe::Target) -> Option<u64> {
         let answer = self.probe.arm(target);
         let started = std::time::Instant::now();
@@ -985,7 +972,6 @@ impl Dispatcher {
         true
     }
 
-    /// Возвращает в разбор пакет, который ждал решения по своему потоку.
     async fn replay_packet(&self, raw: Vec<u8>) {
         let Some(mut packet) = self.pool.try_acquire() else {
             return;
@@ -1407,8 +1393,6 @@ impl Dispatcher {
         }
     }
 
-    /// Команда игрового режима из приложения: `GAME_MODE|<вкл>|<порты игр>`.
-    /// Возвращает (включён, сколько портов игр задано).
     pub fn update_game_mode(&self, payload: &str) -> (bool, usize) {
         let (enabled, ports) = self.game.apply_command(payload);
         self.reset_game_pins();
@@ -1419,7 +1403,6 @@ impl Dispatcher {
         self.game.is_enabled()
     }
 
-    /// Прямой режим для приложений: `APP_DIRECT|<вкл>`.
     pub fn update_app_direct(&self, enabled: bool) -> bool {
         if let Some(relay) = &self.direct_relay {
             relay.set_app_direct_enabled(enabled);
@@ -1427,8 +1410,6 @@ impl Dispatcher {
         enabled
     }
 
-    /// Решение по конкретному потоку: `APP_DIRECT_FLOW|<src>|<dst>|<proto>|<direct>|<filtered>`.
-    /// Приложение присылает его в ответ на событие FLOW_OWNER.
     pub fn update_app_direct_flow(&self, payload: &str) -> bool {
         let mut parts = payload.split('|');
         let (Some(src), Some(dst), Some(protocol)) = (parts.next(), parts.next(), parts.next()) else {
@@ -1523,11 +1504,6 @@ impl Dispatcher {
         }
     }
 
-    /// DNS-фильтр рекламы: на запрос к домену из списка отвечаем локальным пустым
-    /// ответом (NODATA + SOA), пакет не уходит ни в туннель, ни в прямой релей.
-    /// NXDOMAIN здесь был ошибкой: приложения считали такое имя «сеть недоступна»
-    /// и бросали загрузку картинок до следующей ручной попытки.
-    /// Возвращает true, если ответ отправлен.
     fn try_answer_blocked_dns(&self, packet: &PacketBuf) -> bool {
         if !crate::adblock::is_active() {
             return false;
@@ -1595,10 +1571,6 @@ impl Dispatcher {
         true
     }
 
-    /// Шифрованный DNS обходит фильтр: запрос к рекламному домену уходит мимо
-    /// нас и получает настоящий адрес. Обрываем такое соединение (DoT по порту,
-    /// DoH по имени из SNI) — клиент откатывается на обычный DNS через туннель,
-    /// а его запросы фильтр уже видит и рекламные домены получают пустой ответ.
     fn try_reset_encrypted_dns(&self, packet: &PacketBuf) -> bool {
         if !crate::adblock::is_active() {
             return false;
@@ -1648,14 +1620,6 @@ impl Dispatcher {
         true
     }
 
-    /// Реклама YouTube: рвём соединение только с точными служебными хостами
-    /// рекламной статистики и баннеров.
-    ///
-    /// Раньше здесь рвались ещё и узлы CDN по признаку одной `r` в SNI
-    /// (`r1---sn-…`). Признак оказался негодным: те же кэши отдают обычные куски
-    /// видео, постеры и превью, поэтому YouTube оставался без картинок, а видео
-    /// недогружалось. Разбор признака переехал в `youtube_ads::is_ad_sni`, где
-    /// теперь блокируются только хосты из короткого точного списка.
     fn try_block_youtube_ad(&self, packet: &PacketBuf) -> bool {
         if !crate::adblock::is_active() {
             return false;
@@ -1793,9 +1757,6 @@ impl Dispatcher {
         }
     }
 
-    /// Игровой режим: поток закрепляется за одним воркером, и переупорядочивания
-    /// между аллокациями TURN не возникает. Возвращает индекс воркера, если
-    /// пакет обслуживается игровым путём; иначе обычный водопад.
     fn select_game_worker(&self, packet: &[u8], workers: &[WorkerEntry]) -> Option<usize> {
         let dst = crate::sni::extract_dst_addr(packet);
         if !self.game.is_game_flow(dst.as_ref()) {

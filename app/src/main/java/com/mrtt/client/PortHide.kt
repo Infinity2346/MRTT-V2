@@ -5,28 +5,14 @@ import android.content.pm.PackageManager
 import android.util.Log
 import java.io.File
 
-/**
- * Применение правил [PortHidePolicy] через root и их снятие.
- *
- * Правила живут недолго: они ставятся перед стартом туннеля и снимаются при
- * остановке. Если приложение убили (или телефон перезагрузили), правил в
- * iptables не остаётся необработанными: их снимает [clear] при следующем
- * подключении, а сценарий остановки вызывает [clear] всегда — даже когда сама
- * остановка идёт без root.
- */
 internal object PortHide {
 
     private const val TAG = MrttConstants.General.APP_NAME
     private const val STATE_FILE = "port-hide-uids.txt"
 
-    /** Последние применённые UID: по ним же снимаем правила. */
     @Volatile
     private var appliedUids: List<Int> = emptyList()
 
-    /**
-     * Есть ли у приложения root. Кэш живёт до [resetCache] — вызывается при
-     * смене настройки и при подключении.
-     */
     fun hasRoot(context: Context): Boolean = RootShell.isAvailable(context)
 
     fun resetCache() {
@@ -35,10 +21,6 @@ internal object PortHide {
 
     fun appliedCount(): Int = appliedUids.size
 
-    /**
-     * Ставит правила для выбранных пакетов. Возвращает число приложений, для
-     * которых закрыт localhost (0 — root нет или список пуст).
-     */
     fun apply(context: Context, packagesRaw: String, ownUid: Int): Int {
         if (!RootShell.isAvailable(context)) {
             clearApplied()
@@ -74,11 +56,6 @@ internal object PortHide {
         return uids.size
     }
 
-    /**
-     * Прячет имя процесса клиента (`libclient.so`) заменой `comm` на безликое:
-     * без root это ровно та строка, по которой туннель находится в `ps` и в
-     * `/proc/<pid>/cmdline`. Работает только с root; без него — тихо ничего.
-     */
     fun maskProcessName(pid: Int): Boolean {
         if (pid <= 0 || RootShell.isCachedAvailable() != true) return false
         val script = buildString {
@@ -97,7 +74,6 @@ internal object PortHide {
         return masked
     }
 
-    /** Снимает правила, поставленные этим процессом, и то, что осталось на диске. */
     fun clear(context: Context, ownUid: Int) {
         val fromState = runCatching {
             File(context.filesDir, STATE_FILE).takeIf { it.isFile }?.readText()
@@ -114,7 +90,6 @@ internal object PortHide {
         appliedUids = emptyList()
     }
 
-    /** UID выбранных пакетов: у одного приложения их может быть несколько. */
     private fun resolveUids(context: Context, packagesRaw: String): List<Int> {
         val packages = packagesRaw
             .split(',', ';', ' ', '\n', '\t')

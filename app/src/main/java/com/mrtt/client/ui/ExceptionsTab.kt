@@ -483,20 +483,11 @@ fun ExceptionsTab(
         }
     }
 
-    /**
-     * Маршрутизация уже поднятого VPN не знает о новых приложениях: перестраиваем
-     * интерфейс, чтобы их потоки стали видны фильтру, и сообщаем клиенту, что
-     * прямой режим включён.
-     */
     fun applyVpnRouting() {
         TunnelManager.reloadVpn()
         TunnelManager.refreshAppDirect()
     }
 
-    /**
-     * Текущий режим приложения с учётом выбранного списка: в белом списке
-     * «в туннеле» — это участие в белом списке, в чёрном — отсутствие в нём.
-     */
     fun routeOf(packageName: String): AppRoute = when {
         packageName in filteredSelection -> AppRoute.DirectFiltered
         // «В туннеле» и «напрямую» — это и есть текущий список приложений,
@@ -506,11 +497,6 @@ fun ExceptionsTab(
         else -> if (packageName in blacklistSelection) AppRoute.Direct else AppRoute.Tunnel
     }
 
-    /**
-     * Переводит приложение в следующий режим и разводит его по нужным спискам,
-     * чтобы Android и клиент понимали его одинаково:
-     * «напрямую» — вне VPN, «свой интернет + фильтр» — внутри VPN без туннеля.
-     */
     fun applyRoute(packageName: String, route: AppRoute) {
         var nextBlack = blacklistSelection - packageName
         var nextWhite = whitelistSelection - packageName
@@ -547,12 +533,6 @@ fun ExceptionsTab(
         }
     }
 
-    /**
-     * Галочка в списке приложений. Ставится и снимается только вручную: пока
-     * приложение не отмечено, никакого режима у него нет, и оно живёт по
-     * правилам выбранного списка. Снятие галочки возвращает приложение к этим
-     * правилам и убирает ранее назначенный прямой режим.
-     */
     fun setAppChecked(packageName: String, checked: Boolean) {
         val newSelection = if (checked) {
             activeAppSelection + packageName
@@ -2365,7 +2345,6 @@ fun ExceptionsTab(
     }
 }
 
-/** Пункт выбора режима приложения в диалоге долгого нажатия. */
 @Composable
 private fun RouteOption(
     title: String,

@@ -1,25 +1,3 @@
-//! Режим «свой интернет, но с вырезанной рекламой» для отдельных приложений.
-//!
-//! Не всякое приложение стоит гнать через VK-туннель: RuTube или браузер с
-//! локальным сервисом работают быстрее напрямую. Но просто исключить приложение
-//! из туннеля нельзя — вместе с туннелем уходит и фильтр рекламы, а DNS
-//! исключённого приложения уходит к оператору в обход фильтра.
-//!
-//! Поэтому приложение остаётся в VPN, но его потоки получают третий режим:
-//! DNS-запросы по-прежнему фильтруются (реклама не резолвится), TCP/UDP идут
-//! напрямую через `direct_relay`, минуя воркеры и звонок, — то есть обычным
-//! интернетом пользователя.
-//!
-//! Как узнать, что поток принадлежит именно этому приложению: в VPN мы видим
-//! только IP-пакеты, имени пакета там нет. Поэтому SQL-стек при первом пакете
-//! нового потока просит приложение (Kotlin) найти владельца соединения
-//! (`ConnectivityManager.getConnectionOwnerUid`, Android 10+) и записать пару
-//! «источник-назначение» сюда командой `APP_DIRECT_FLOW|src|dst|proto`. Такой же
-//! набор хранится и как «просто напрямую» — тогда фильтр рекламы для потока
-//! выключается, но сам он всё равно идёт мимо тоннеля.
-//!
-//! Пока владелец не опознан, поток не блокируется: он идёт в туннель, то есть
-//! хуже по скорости, но никогда не рвётся и не утекает мимо VPN незаметно.
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -27,40 +5,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Сколько живёт запись о потоке без новых пакетов.
 const FLOW_TTL: Duration = Duration::from_secs(180);
-/// Верхняя граница таблицы, чтобы долгая сессия не росла в памяти.
 const MAX_FLOWS: usize = 16_384;
-/// Сколько первых пакетов потока держим, пока решается его судьба.
 const MAX_HELD_PACKETS: usize = 4;
-/// Дольше этого первые пакеты не держим: приложение за это время уже ответит
-/// либо соединение начнёт повтор.
 const MAX_HELD_AGE: Duration = Duration::from_secs(2);
-/// Сколько времени ждём ответ приложения о владельце потока.
 const OWNER_QUERY_TTL: Duration = Duration::from_secs(6);
 const MAX_OWNER_QUERIES: usize = 1024;
 
 static APP_DIRECT_QUERIES: AtomicU64 = AtomicU64::new(0);
 static APP_DIRECT_FLOWS: AtomicU64 = AtomicU64::new(0);
 
-/// Сколько потоков уже опознано как «напрямую с фильтром».
 pub fn active_flows() -> u64 {
     APP_DIRECT_FLOWS.load(Ordering::Relaxed)
 }
 
-/// Сколько раз спрашивали приложение о владельце потока.
 pub fn owner_queries() -> u64 {
     APP_DIRECT_QUERIES.load(Ordering::Relaxed)
 }
 
-/// Что делать с потоком.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppRoute {
-    /// Как обычно: DNS фильтруется, трафик идёт в туннель.
     Tunnel,
-    /// Прямо через интернет пользователя, но DNS-фильтр рекламы остаётся.
     DirectFiltered,
-    /// Прямо и без фильтра: приложение исключено из VPN по выбору пользователя.
     DirectRaw,
 }
 
@@ -98,18 +64,14 @@ impl Held {
 #[derive(Default)]
 struct State {
     flows: HashMap<FlowKey, (AppRoute, Instant)>,
-    /// Пары, о владельце которых уже спросили приложение.
     asked: HashSet<FlowKey>,
     asked_until: HashMap<FlowKey, Instant>,
-    /// Первые пакеты потоков, по которым ждём ответ приложения.
     held: HashMap<FlowKey, Held>,
 }
 
-/// Таблица потоков, которым разрешён прямой выход.
 #[derive(Default)]
 pub struct AppDirectTable {
     state: Mutex<State>,
-    /// Куда вернуть придержанные пакеты, когда решение принято.
     replay: Mutex<Option<tokio::sync::mpsc::Sender<Vec<u8>>>>,
 }
 
@@ -118,15 +80,12 @@ impl AppDirectTable {
         Arc::new(Self::default())
     }
 
-    /// Подключает канал возврата: диспетчер примет пакеты обратно и разложит их
-    /// уже по принятому решению.
     pub fn set_replay(&self, sender: tokio::sync::mpsc::Sender<Vec<u8>>) {
         if let Ok(mut guard) = self.replay.lock() {
             *guard = Some(sender);
         }
     }
 
-    /// Придерживает пакет потока, решение по которому ещё не пришло.
     pub fn hold(&self, src: SocketAddr, dst: SocketAddr, protocol: u8, packet: &[u8]) {
         let key = FlowKey {
             src,
@@ -147,8 +106,6 @@ impl AppDirectTable {
         }
     }
 
-    /// Возвращает пакеты, которые некуда деть: решение не пришло за отведённое
-    /// время. Они уходят обычным путём, чтобы соединение не ждало вечно.
     pub fn drain_stale(&self) -> Vec<Vec<u8>> {
         let mut state = self.lock();
         let now = Instant::now();
@@ -186,7 +143,6 @@ impl AppDirectTable {
         }
     }
 
-    /// Записывает решение по потоку (ответ приложения на запрос владельца).
     pub fn set_flow(&self, src: &str, dst: &str, protocol: u8, direct: bool, filtered: bool) {
         let Some(key) = FlowKey::parse(src, dst, protocol) else {
             return;
@@ -217,7 +173,6 @@ impl AppDirectTable {
         self.release_held(&key);
     }
 
-    /// Пакеты, которые ждут ответа и не должны потеряться при ответе «в туннель».
     pub fn take_held(&self, src: SocketAddr, dst: SocketAddr, protocol: u8) -> Vec<Vec<u8>> {
         let key = FlowKey {
             src,
@@ -228,7 +183,6 @@ impl AppDirectTable {
         state.held.remove(&key).map(|held| held.packets).unwrap_or_default()
     }
 
-    /// Решение по уже опознанному потоку (включая «в туннеле»).
     pub fn route_for(&self, src: SocketAddr, dst: SocketAddr, protocol: u8) -> Option<AppRoute> {
         let key = FlowKey {
             src,
@@ -241,9 +195,6 @@ impl AppDirectTable {
         Some(*route)
     }
 
-    /// Забывает решение по потоку: первый пакет соединения нельзя ни слать
-    /// наугад в туннель (VPN порвёт соединение на полпути), ни отправлять мимо
-    /// VPN неопознанным. Поэтому такой пакет придерживается до ответа.
     pub fn take_pending(&self, src: SocketAddr, dst: SocketAddr, protocol: u8) -> bool {
         let key = FlowKey {
             src,
@@ -254,8 +205,6 @@ impl AppDirectTable {
         state.asked.contains(&key) && !state.flows.contains_key(&key)
     }
 
-    /// Стоит ли спросить приложение, чей это поток. Один пакет — один вопрос:
-    /// ответ придёт следующим кадром лога, а поток пока идёт в туннель.
     pub fn should_ask(&self, src: SocketAddr, dst: SocketAddr, protocol: u8) -> bool {
         let key = FlowKey {
             src,
@@ -288,8 +237,6 @@ impl AppDirectTable {
         true
     }
 
-    /// Есть ли вообще включённые приложения в прямом режиме. Если нет, спрашивать
-    /// приложение о каждом потоке бессмысленно и дорого.
     pub fn is_active(&self) -> bool {
         let state = self.lock();
         !state.flows.is_empty() || !state.asked.is_empty()
@@ -311,7 +258,6 @@ mod tests {
         SocketAddr::from(([10, 66, 67, last], port))
     }
 
-    /// Ключ потока в том же виде, в каком его присылает приложение.
     fn flow(src: &SocketAddr, dst: &SocketAddr) -> (String, String) {
         (src.to_string(), dst.to_string())
     }

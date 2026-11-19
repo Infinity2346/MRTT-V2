@@ -39,13 +39,6 @@ internal data class AppItem(
     val isSystem: Boolean,
 )
 
-/**
- * Строка приложения. Краткое нажатие только ставит или снимает галочку — то
- * есть выбирает приложение в белый/чёрный список. Режим не меняется сам по
- * себе: он настраивается отдельно, долгим нажатием по уже отмеченному
- * приложению. Так список остаётся таким же, как раньше, и ничего не
- * «включается» само.
- */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun AppRow(
@@ -134,7 +127,6 @@ internal fun AppRow(
     }
 }
 
-/** Маленькая плашка с текущим режимом приложения. */
 @Composable
 private fun RouteChip(route: AppRoute) {
     val colors = MaterialTheme.colorScheme

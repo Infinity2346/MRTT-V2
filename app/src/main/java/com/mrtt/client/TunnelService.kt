@@ -666,13 +666,6 @@ class TunnelService : Service() {
         }
     }
 
-    /**
-     * Токен из сохранённой сессии VK.
-     *
-     * Сессия — это куки. Токен из них получается заново перед каждым подключением,
-     * поэтому «истёк токен» больше не значит «войдите заново»: заново нужен только
-     * вход, когда VK перестал принимать сами куки (сессия отозвана).
-     */
     private suspend fun sessionToken(store: SettingsStore): String {
         // Сначала — вход через приложение ВК: там привязка уже токен, и он
         // обновляется по refresh_token без повторного входа человека.
@@ -703,13 +696,6 @@ class TunnelService : Service() {
         }
     }
 
-    /**
-     * Свежий токен входа через приложение ВК.
-     *
-     * Токен VK ID живёт около часа, поэтому его нельзя просто хранить: перед
-     * каждым подключением обновляем по `refresh_token` и сохраняем новый (ВК
-     * отдаёт новую пару, старый refresh может стать недействительным).
-     */
     private suspend fun refreshVkIdTokenIfSaved(store: SettingsStore): String? {
         val saved = store.vkIdToken.first()
         if (saved.isBlank()) return null
@@ -1206,12 +1192,6 @@ class TunnelService : Service() {
         }
     }
 
-    /**
-     * «Экономия батареи»: in force («Авто» — the phone's battery saver is on; «Свой уровень» — at or below the chosen
-     * charge and not charging), the service lets go of its wake lock and TunVpnService of its own; out of force again,
-     * they are taken back while the tunnel runs. The charge and the phone's saver come from their broadcasts, which
-     * arrive only while the CPU is awake anyway.
-     */
     private fun observeBatterySaver() {
         val powerManager = getSystemService(PowerManager::class.java)
         val receiver = object : BroadcastReceiver() {

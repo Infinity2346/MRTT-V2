@@ -17,13 +17,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal open class ServerApiException(message: String) : IOException(message)
 
-/** SSH пустил, но на порту API никто не слушает: MRTT не установлен или служба лежит. */
 internal class ServerNotRunningException(message: String) : ServerApiException(message)
 
-/**
- * API управления сервером слушает только 127.0.0.1, поэтому запросы идут через SSH
- * (direct-tcpip) теми же доступами, что и деплой. Наружу никаких веб-портов.
- */
 internal class ServerApi(private val context: Context, private val server: VpsServer) {
 
     suspend fun getObject(path: String): JSONObject = JSONObject(request("GET", path))

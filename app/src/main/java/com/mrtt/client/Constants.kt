@@ -100,7 +100,6 @@ object MrttConstants {
         const val ACTION_POSTPONED = "postponed"
         const val ACTION_UPDATE = "update"
 
-        /** Репозиторий сборок: отсюда приложение проверяет новые версии. */
         const val GITHUB_RELEASES_URL =
             "https://api.github.com/repos/Toolbox231/Project/releases?per_page=30"
     }
@@ -152,7 +151,6 @@ object MrttConstants {
                 "&revoke=1" +
                 "&v=5.199"
         const val VK_LOGIN_URL = "https://vk.ru/"
-        /** Мобильная страница входа: сразу форма логина, без витрины и лишних нажатий. */
         const val VK_MOBILE_LOGIN_URL = "https://m.vk.ru/"
         const val API_METHOD_BASE_URL = "https://api.vk.ru/method/"
         const val API_VERSION = "5.199"

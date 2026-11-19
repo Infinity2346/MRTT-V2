@@ -302,23 +302,18 @@ impl ClientRoute {
         (idx, tokens)
     }
 
-    /// Канал отказал (очередь сокета полна) — запоминаем это на короткое
-    /// время, чтобы следующие пакеты выбирали другой канал, а не вставали за
-    /// ним в очередь.
     fn note_pressure(&mut self, idx: usize) {
         if let Some(slot) = self.pressure.get_mut(idx) {
             *slot = PRESSURE_TICKS;
         }
     }
 
-    /// Канал принял пакет — давление снимается.
     fn clear_pressure(&mut self, idx: usize) {
         if let Some(slot) = self.pressure.get_mut(idx) {
             *slot = 0;
         }
     }
 
-    /// Раз в вызов: давление спадает, даже если каналом никто не пользовался.
     fn decay_pressure(&mut self) {
         for slot in self.pressure.iter_mut() {
             *slot = slot.saturating_sub(1);
@@ -530,7 +525,6 @@ impl RouteTable {
             .and_then(|group| group.select_packet(now, packet))
     }
 
-    /// Сообщаем таблице маршрутов, что канал отказался принять пакет.
     pub fn note_pressure(&mut self, key: usize, worker_id: WorkerId) {
         let Some(group) = self.groups.get_mut(key).and_then(|group| group.as_mut()) else {
             return;
@@ -544,7 +538,6 @@ impl RouteTable {
         }
     }
 
-    /// Сообщаем таблице маршрутов, что канал принял пакет.
     pub fn clear_pressure(&mut self, key: usize, worker_id: WorkerId) {
         let Some(group) = self.groups.get_mut(key).and_then(|group| group.as_mut()) else {
             return;

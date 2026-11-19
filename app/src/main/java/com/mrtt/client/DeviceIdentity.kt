@@ -5,7 +5,6 @@ import android.os.Build
 import java.io.File
 import java.util.UUID
 
-/** Стабильный ID установки: по нему сервер привязывает устройство к ссылке. */
 internal object DeviceIdentity {
     private const val FILE_NAME = "device_id"
 

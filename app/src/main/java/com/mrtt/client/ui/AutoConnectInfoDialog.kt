@@ -21,11 +21,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.mrtt.client.ui.components.MrttGlassButton as Button
 import com.mrtt.client.ui.design.MrttSizes
 
-/**
- * Пояснение к «Автоподключение при запуске»: включённый туннель поднимается
- * сам при входе в приложение, но ручное выключение запоминается и не
- * перебивается до следующего запуска.
- */
 @Composable
 internal fun AutoConnectInfoDialog(onDismiss: () -> Unit) {
     Dialog(

@@ -4,6 +4,8 @@
 package com.mrtt.client
 
 internal object WorkerCountPolicy {
+    fun requested(saved: Int?): Int = normalize(saved ?: MrttConstants.Tunnel.DEFAULT_WORKERS)
+
     fun normalize(
         requested: Int,
         maximum: Int = MrttConstants.Tunnel.MAX_WORKERS,
@@ -30,14 +32,6 @@ internal object WorkerCountPolicy {
         else -> maximumForHashes(manualHashCount)
     }
 
-    /**
-     * Потолок ползунка для текущего транспорта.
-     *
-     * Хеши VK ограничивают число потоков (каждый звонок держит свою порцию),
-     * а MAX и Jitsi — нет: у них один-единственный звонок или комната, поэтому
-     * потолок там общий, а не «один хеш — 30 потоков». Раньше MAX попадал в
-     * ветку с хешами и упирался в 27 при потолке 100.
-     */
     fun maximumForTransport(
         maxMode: Boolean,
         jitsiMode: Boolean,

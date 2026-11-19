@@ -40,10 +40,6 @@ import com.mrtt.client.ui.components.MrttSpeedReadout
 import com.mrtt.client.ui.design.MrttSpacing
 import kotlin.math.ceil
 
-/**
- * Вкладка «Соединения» в логах: скорость, статистика сессии, состояние потоков и подсказки,
- * почему скачивание может быть медленным.
- */
 @Composable
 internal fun ConnectionsPanel(settingsStore: SettingsStore, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme

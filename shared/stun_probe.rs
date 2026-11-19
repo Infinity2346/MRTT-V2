@@ -1,6 +1,3 @@
-//! The connectivity check that opens a WebRTC call, sent before DTLS on a direct connection so that the flow starts the
-//! way a call does. Nothing depends on it: it runs before the session and a server that does not answer only costs a wait.
-//! MESSAGE-INTEGRITY is random, since the two ends share no ICE password; on the wire it looks the same.
 
 // Client and server each use one side of this file.
 #![allow(dead_code)]
@@ -37,7 +34,6 @@ fn attribute(message: &mut Vec<u8>, kind: u16, value: &[u8]) {
     message.resize(message.len().next_multiple_of(4), 0);
 }
 
-/// Sets the length field and closes the message with its FINGERPRINT.
 fn finish(mut message: Vec<u8>) -> Vec<u8> {
     let length = (message.len() - HEADER + FINGERPRINT_LEN) as u16;
     message[2..4].copy_from_slice(&length.to_be_bytes());
@@ -59,7 +55,6 @@ fn fingerprint_valid(message: &[u8]) -> bool {
         && tail[4..] == (crc32(body) ^ 0x5354_554e).to_be_bytes()
 }
 
-/// A Binding Request as a browser sends it; every field comes from `random`. Returns it with its transaction id.
 pub fn request(random: &[u8; 64]) -> (Vec<u8>, [u8; 12]) {
     let mut transaction = [0u8; 12];
     transaction.copy_from_slice(&random[..12]);
@@ -79,12 +74,10 @@ pub fn request(random: &[u8; 64]) -> (Vec<u8>, [u8; 12]) {
     (finish(message), transaction)
 }
 
-/// Cheap first test for the data path: no tunnel packet starts with this byte.
 pub fn may_be_request(packet: &[u8]) -> bool {
     packet.first() == Some(&BINDING_REQUEST[0])
 }
 
-/// The reply to a Binding Request from `peer`, never longer than the request, so it cannot amplify anything.
 pub fn answer(packet: &[u8], peer: SocketAddr, random: &[u8; 20]) -> Option<Vec<u8>> {
     if packet.get(..2)? != BINDING_REQUEST || !fingerprint_valid(packet) {
         return None;

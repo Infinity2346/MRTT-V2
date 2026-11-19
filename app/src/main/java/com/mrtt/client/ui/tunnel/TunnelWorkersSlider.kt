@@ -55,14 +55,15 @@ internal fun TunnelWorkersControl(
     onInfo: () -> Unit,
     fixedWorkers: Int? = null,
 ) {
-    val isFixed = fixedWorkers != null && fixedWorkers in 3..100
     val minimum = WORKER_STEPS.first()
     val normalizedMaximum = roundToGroup(maximum, maximum)
-    val normalizedValue = roundToGroup(value.coerceIn(minimum, normalizedMaximum), normalizedMaximum)
-    var localValue by remember(normalizedValue, normalizedMaximum) {
-        mutableStateOf(normalizedValue.coerceIn(minimum, normalizedMaximum))
+    val requestedValue = roundToGroup(value, SLIDER_MAX_WORKERS.toFloat())
+    val sliderValue = requestedValue.coerceIn(minimum, normalizedMaximum)
+    var localValue by remember(sliderValue, normalizedMaximum) {
+        mutableStateOf(sliderValue)
     }
     val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val activeWorkers = fixedWorkers?.takeIf { it in 3..100 }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -72,7 +73,7 @@ internal fun TunnelWorkersControl(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (isFixed) "Потоки (лимит сервера):" else "Потоки",
+                    text = "Потоки",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
@@ -86,33 +87,34 @@ internal fun TunnelWorkersControl(
                 }
             }
             Text(
-                text = if (isFixed) fixedWorkers.toString() else localValue.toInt().toString(),
+                text = requestedValue.toInt().toString(),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        if (!isFixed) {
-            CompactSteppedSlider(
-                value = localValue,
-                onValueChange = { localValue = it },
-                onValueChangeFinished = {
-                    val finalValue = localValue.coerceIn(minimum, normalizedMaximum)
-                    currentOnValueChange(finalValue)
-                },
-                valueRange = minimum..normalizedMaximum,
-                stepSize = MrttConstants.Tunnel.WORKERS_PER_GROUP.toFloat(),
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
+        CompactSteppedSlider(
+            value = localValue,
+            onValueChange = { localValue = it },
+            onValueChangeFinished = {
+                currentOnValueChange(localValue.coerceIn(minimum, normalizedMaximum))
+            },
+            valueRange = minimum..normalizedMaximum,
+            stepSize = MrttConstants.Tunnel.WORKERS_PER_GROUP.toFloat(),
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (activeWorkers != null && activeWorkers != requestedValue.toInt()) {
+            Text(
+                text = "Сейчас активно: $activeWorkers · доступно до ${normalizedMaximum.toInt()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
-            CompactSteppedSlider(
-                value = fixedWorkers.toFloat(),
-                onValueChange = {},
-                valueRange = 3f..maximum.coerceAtLeast(fixedWorkers.toFloat()),
-                stepSize = 1f,
-                enabled = false,
-                modifier = Modifier.fillMaxWidth(),
+        } else if (requestedValue > normalizedMaximum) {
+            Text(
+                text = "Сейчас доступно до ${normalizedMaximum.toInt()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

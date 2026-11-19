@@ -15,19 +15,15 @@ object TunnelEventParser {
         data class ActiveZero(val message: String = "") : Event()
         data class CallUnavailable(val hash: String, val code: Int) : Event()
 
-        /** Токен аккаунта VK/MAX отвергнут: нужен свежий, звонок при этом жив. */
         data class AuthExpired(val code: Int) : Event()
 
-        /** MAX не принял свой токен: это не повод трогать вход в VK. */
         data object MaxTokenRejected : Event()
 
-        /** MAX выдал новый токен сессии: его нужно сохранить. */
         data class MaxSessionToken(val token: String) : Event()
         data object NetworkSuspect : Event()
         data object ServerRestart : Event()
         data class Config(val config: String) : Event()
 
-        /** Реальный локальный порт клиента: 0 — не удалось узнать. */
         data class LocalPort(val port: Int) : Event()
         data class Stats(
             val active: Int,
@@ -60,7 +56,6 @@ object TunnelEventParser {
         data class Probe(val ms: Int) : Event()
         data class RoomSeats(val seats: Int) : Event()
 
-        /** Вопрос клиента: чей это поток. Ответ — команда APP_DIRECT_FLOW. */
         data class FlowOwner(val src: String, val dst: String, val protocol: Int) : Event()
     }
 

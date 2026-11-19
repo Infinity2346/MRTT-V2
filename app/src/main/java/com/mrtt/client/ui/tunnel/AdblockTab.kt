@@ -50,14 +50,6 @@ import com.mrtt.client.ui.design.MrttSizes
 import com.mrtt.client.ui.design.MrttStyleShapes
 import kotlinx.coroutines.launch
 
-/**
- * Вкладка «Adblock»: включение фильтра, готовые категории правил, свои домены,
- * подписки на внешние списки и российские сервисы мимо туннеля.
- *
- * Сама фильтрация живёт в Rust-клиенте: домены получают локальный пустой ответ,
- * DoT отсекается по порту 853 только при включённом наборе «Шифрованный DNS»,
- * DoH — по имени из SNI. Здесь только то, какие списки ему отдать.
- */
 @Composable
 fun AdblockTab(settingsStore: SettingsStore) {
     val context = LocalContext.current.applicationContext
@@ -504,10 +496,6 @@ fun AdblockTab(settingsStore: SettingsStore) {
     }
 }
 
-/**
- * «5 минут назад» вместо точной даты: человеку важно понять свежесть списков,
- * а не момент времени.
- */
 private fun relativeTime(timestamp: Long): String {
     val diff = (System.currentTimeMillis() - timestamp) / 1000L
     return when {

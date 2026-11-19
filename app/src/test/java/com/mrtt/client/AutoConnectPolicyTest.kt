@@ -4,11 +4,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Автоподключение при запуске: включается только когда пользователь сам выбрал
- * его в настройках, только при валидной конфигурации и только если туннель ещё
- * не работает. Иначе VPN поднимался бы после ручного выключения.
- */
 class AutoConnectPolicyTest {
     private fun shouldAutoConnect(
         enabled: Boolean,

@@ -4,20 +4,12 @@ import android.content.Context
 import android.util.Log
 import java.util.concurrent.TimeUnit
 
-/**
- * Тонкая обёртка над `su`: единственное место, где приложение просит root.
- *
- * Ничего не делает молча: каждое действие логируется, а недоступность root —
- * это нормальное состояние, а не ошибка. Все вызовы короткие (у проверки
- * доступа потолок 4 секунды), чтобы старт туннеля не ждал менеджер прав.
- */
 internal object RootShell {
 
     private const val TAG = MrttConstants.General.APP_NAME
     private const val PROBE_TIMEOUT_MS = 4_000L
     private const val COMMAND_TIMEOUT_MS = 8_000L
 
-    /** Один раз проверенный ответ: `su` на телефоне не появляется и не исчезает. */
     @Volatile
     private var cachedAvailable: Boolean? = null
 
@@ -29,7 +21,6 @@ internal object RootShell {
         return available
     }
 
-    /** Сбрасывает кэш: пользователь мог выдать или отозвать права между подключениями. */
     fun resetCache() {
         cachedAvailable = null
     }
@@ -54,10 +45,6 @@ internal object RootShell {
         }
     }
 
-    /**
-     * Скрипт целиком уходит в `su -c` одной строкой: так root-шелл поднимается
-     * один раз, а не на каждую команду.
-     */
     fun run(script: String, timeoutMs: Long = COMMAND_TIMEOUT_MS): String? {
         val process = runCatching {
             ProcessBuilder("su", "-c", script).redirectErrorStream(true).start()
@@ -76,7 +63,6 @@ internal object RootShell {
         }
     }
 
-    /** Есть ли в системе нужный бинарь (iptables бывает только `iptables-legacy`). */
     fun hasBinary(name: String): Boolean {
         val output = run("command -v $name || echo MISSING") ?: return false
         return !output.contains("MISSING")

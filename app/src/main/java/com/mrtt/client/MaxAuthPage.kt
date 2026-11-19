@@ -8,7 +8,6 @@ internal data class MaxAuthCredentials(
     val token: String,
     val groupId: String,
     val deviceId: String = "",
-    /** Где на странице нашёлся deviceId: нужно только для журнала. */
     val deviceSource: String = "",
 )
 
@@ -24,14 +23,6 @@ internal data class MaxAuthPage(
         return MaxAuthCredentials(token, group, deviceId, deviceSource)
     }
 
-    /**
-     * Токен из localStorage `__oneme_auth` — это токен веб-сессии MAX.
-     *
-     * Транспорт приложения (`api.oneme.ru`, ver=10) проверяет токен иначе и
-     * отвечает на веб-токен `login.cred` / `FAIL_WRONG_PASSWORD` — именно так
-     * выглядело «MAX привязан, группа: -8141…», после чего подключение падало.
-     * Признак — короткая строка; токены приложения заметно длиннее.
-     */
     val isWebSessionToken: Boolean
         get() = token.trim().length < 96
 

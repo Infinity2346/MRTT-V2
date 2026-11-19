@@ -55,15 +55,7 @@ const _: () = assert!(UDP_RECEIVE_BUFFER_BYTES + UDP_SEND_BUFFER_BYTES <= 512 * 
 // ≈ 150 КБ на воркер: очередь живёт в общем пуле буферов, поэтому растёт не
 // память, а лимит под нагрузкой.
 const INCOMING_QUEUE_CAPACITY: usize = 128;
-/// Сколько driver ждёт места в очереди приёма, прежде чем сдаться.
-///
-/// Раньше пакет, не поместившийся в очередь, выбрасывался сразу. Для TCP это
-/// скрытая потеря прямо перед сдачей в ядро телефона: сегмент уже вышел из
-/// туннеля, повтор придёт только по тайм-ауту — а на глаз это выглядит как
-/// «картинка не догрузилась, нажал ещё раз и загрузилось». Теперь driver
-/// секунду ждёт, пока воркер разберёт очередь, и только потом уступает.
 const INCOMING_QUEUE_WAIT: Duration = Duration::from_millis(1000);
-/// Как часто driver проверяет очередь приёма, пока ждёт места.
 const INCOMING_QUEUE_POLL: Duration = Duration::from_millis(2);
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(12);
 const ALLOCATION_TIMEOUT: Duration = Duration::from_secs(25);
@@ -74,16 +66,7 @@ const CLEANUP_ERROR_RETRY: Duration = Duration::from_millis(100);
 const MAX_BACKGROUND_CLEANUPS: usize = 128;
 const UDP_TRANSIENT_ERROR_LIMIT: u32 = 16;
 const UDP_TRANSIENT_ERROR_WINDOW: Duration = Duration::from_secs(5);
-/// Сколько подряд отказов `Connection refused` без единого принятого пакета
-/// считаем приговором аллокации.
-///
-/// `Connection refused` на UDP — это ICMP «порт закрыт»: релейный порт на
-/// сервере больше не слушает (аллокация истекла или сервер перезапустился).
-/// Повторять `recv` на таком сокете бессмысленно, поэтому после нескольких
-/// отказов сессия завершается сразу, а воркер пересоздаёт аллокацию вместо
-/// того чтобы молча ждать тайм-аутов.
 const UDP_CONNECTION_REFUSED_LIMIT: u32 = 3;
-/// Не чаще одной строки о временных отказах приёма в это окно.
 const UDP_TRANSIENT_LOG_WINDOW: Duration = Duration::from_secs(30);
 const OUTBOUND_QUEUE_CAPACITY: usize = 64;
 const OUTBOUND_IDLE_POLL: Duration = Duration::from_millis(20);
@@ -240,9 +223,6 @@ pub struct TurnAllocation {
     outbound_queue: Option<Arc<OutboundQueue>>,
     outbound_writer: Mutex<Option<JoinHandle<()>>>,
     deallocated: AtomicBool,
-    /// Подробные шаги (транспорт, аллокация, ChannelBind) пишем только для
-    /// первых потоков: те же строки на каждый из сотни потоков дают простыню
-    /// в журнале, ничего не добавляя к диагностике.
     verbose: bool,
 }
 
@@ -251,9 +231,6 @@ pub struct TurnConnectTarget<'a> {
     pub override_host: Option<&'a str>,
     pub override_port: Option<&'a str>,
     pub transport_mode: TurnTransportMode,
-    /// Подробные шаги TURN (транспорт, аллокация, ChannelBind) в журнал.
-    /// На сотне потоков те же строки дают простыню, поэтому подробно пишут
-    /// только первые потоки — остальным хватает одной строки «Поток готов».
     pub verbose: bool,
 }
 
@@ -261,7 +238,6 @@ pub struct TurnConnectTarget<'a> {
 enum TurnOutbound {
     Udp(Arc<UdpSocket>),
     Stream(Arc<TurnStreamWriter>),
-    /// A seat in the server's Jitsi room: datagrams go over the videobridge datachannel.
     Room(tokio::sync::mpsc::Sender<PacketBuf>),
 }
 
@@ -380,10 +356,8 @@ impl TurnReceiver {
     }
 }
 
-/// In place of a Jitsi host: workers go straight to the peer. The room machinery already does without TURN credentials.
 pub const DIRECT_HOST: &str = "direct.invalid";
 
-/// Server seats the last joining worker saw in the room.
 pub static ROOM_SEATS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 impl TurnAllocation {
@@ -506,8 +480,6 @@ impl TurnAllocation {
         Ok(allocation)
     }
 
-    /// Seats this worker in `room` and addresses the server seat picked by `seat_hint`.
-    /// The core only keeps bookkeeping for a room seat; its create check refuses port 0, so a dummy one.
     const ROOM_CORE_PLACEHOLDER: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 9);
 
     fn room_core() -> Result<(Arc<NativeCore>, Arc<DriverShared>)> {
@@ -538,7 +510,6 @@ impl TurnAllocation {
         Ok((core, shared))
     }
 
-    /// The cascade's path: straight to the server's UDP port, with nothing standing in between.
     pub async fn direct(peer: SocketAddr, pool: Arc<PacketPool>) -> Result<Arc<Self>> {
         let bind: SocketAddr = if peer.is_ipv4() { ([0, 0, 0, 0], 0).into() } else { (std::net::Ipv6Addr::UNSPECIFIED, 0).into() };
         let socket = Arc::new(tokio::net::UdpSocket::bind(bind).await.context("UDP bind")?);
@@ -1788,15 +1759,10 @@ async fn process_packet(
     }
 }
 
-/// Сколько раз пробуем положить пакет в очередь приёма, прежде чем сдаться.
 fn incoming_queue_attempts() -> u32 {
     (INCOMING_QUEUE_WAIT.as_millis() / INCOMING_QUEUE_POLL.as_millis()).max(1) as u32
 }
 
-/// Сдаёт пакет в очередь приёма, коротко подождав места.
-///
-/// Отправленный пакет при отказе возвращается обратно — он не теряется и не
-/// занимает буфер пула. `false` означает, что места так и не нашлось.
 async fn deliver_incoming(
     incoming: &mut SpscSender<PacketBuf>,
     shared: &DriverShared,

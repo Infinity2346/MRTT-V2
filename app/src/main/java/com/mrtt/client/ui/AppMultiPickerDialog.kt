@@ -49,12 +49,6 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 
-/**
- * Выбор приложений галочками: нужен там, где список пакетов длиннее одной
- * строки (например «кому закрыть localhost» в режиме скрытия через root).
- *
- * Диалог сам ничего не сохраняет: отдаёт выбранные пакеты наружу.
- */
 @Composable
 fun AppMultiPickerDialog(
     title: String,

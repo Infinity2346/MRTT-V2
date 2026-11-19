@@ -532,7 +532,6 @@ private fun ClientEditDialog(
     }
 }
 
-/** Подписка: одна ссылка и QR-код, внутри которых выбранные конфиги этого сервера. */
 @Composable
 private fun SubscriptionBuilderDialog(
     clients: List<ServerClient>,

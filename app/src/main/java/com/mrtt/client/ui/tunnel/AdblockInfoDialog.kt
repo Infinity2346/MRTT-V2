@@ -23,7 +23,6 @@ import com.mrtt.client.ui.appSectionCardBorderColor
 import com.mrtt.client.ui.appSectionCardColor
 import com.mrtt.client.ui.design.MrttSizes
 
-/** Пояснение к переключателю Adblock: что именно фильтруется и чего он не делает. */
 @Composable
 internal fun AdblockInfoDialog(onDismiss: () -> Unit) {
     Dialog(

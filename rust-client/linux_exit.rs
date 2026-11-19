@@ -1,5 +1,3 @@
-//! The client on a VPS, as the exit of a cascade: no VpnService here, so it opens its own TUN once the server has given
-//! it an address, lets the hook set up routing, and hands the descriptor over the same socket Android uses.
 
 use anyhow::{Context, Result, bail};
 use nix::sys::socket::{
@@ -57,7 +55,6 @@ fn hand_over(socket_name: &str, tun: &OwnedFd) -> Result<()> {
     Ok(())
 }
 
-/// Called once with the address the exit server assigned to this client.
 pub fn attach(exit: &ExitTun, ip: &str) -> Result<()> {
     let tun = open_tun(&exit.name)?;
     let status = std::process::Command::new(&exit.hook).arg(ip).status().context("hook")?;

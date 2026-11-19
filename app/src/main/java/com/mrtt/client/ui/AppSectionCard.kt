@@ -19,7 +19,6 @@ import com.mrtt.client.ui.design.MrttStyleShapes
 import com.mrtt.client.ui.design.MrttSpacing
 import com.mrtt.client.ui.design.mrttGlass
 
-/** Сплошной цвет для окон и шторок: стекло в них читалось бы плохо. */
 @Composable
 fun appSectionCardColor(): Color = MaterialTheme.colorScheme.surface
 

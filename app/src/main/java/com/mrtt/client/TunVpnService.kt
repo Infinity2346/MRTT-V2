@@ -72,7 +72,6 @@ class TunVpnService : VpnService() {
         }
     }
 
-    /** «Экономия батареи» came into force (let the CPU sleep) or ended (hold it again while the VPN runs). */
     fun onBatterySaverChanged(save: Boolean) {
         if (save) {
             runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
@@ -158,17 +157,6 @@ class TunVpnService : VpnService() {
         return START_STICKY
     }
 
-    /**
-     * Свои серверы из списка «Серверы» всегда идут в туннель, даже если включён
-     * белый список приложений и даже если адрес сервера попал в исключения.
-     * Иначе получается замкнутый круг: панель управления и деплой недоступны,
-     * потому что их собственный адрес исключён из VPN.
-     */
-    /**
-     * Приложения, которым назначен прямой режим: «свой интернет с фильтром
-     * рекламы» или «свой интернет без фильтра». Их нельзя исключать из VPN,
-     * иначе фильтр рекламы перестанет их видеть.
-     */
     private fun appDirectPackages(): Set<String> =
         (SettingsStore.cachedAppDirectFiltered + "," + SettingsStore.cachedAppDirectRaw)
             .split(',')

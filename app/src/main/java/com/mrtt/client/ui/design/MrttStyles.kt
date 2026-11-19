@@ -7,28 +7,18 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/**
- * Стиль оформления целиком: цвета, фон под стеклом и настроение.
- *
- * Один стиль — это пара схем (светлая и тёмная) плюс свои пятна света на фоне.
- * Приложение не «перекрашивается наполовину»: всё берётся из [ColorScheme],
- * поэтому новый стиль достаточно объявить здесь, а разметку менять не нужно.
- */
 @Immutable
 data class MrttStyle(
     val id: String,
     val label: String,
-    /** Короткое описание, чтобы в настройках было понятно, что выбираешь. */
     val hint: String,
     val light: ColorScheme,
     val dark: ColorScheme,
     val lightBackdrop: List<MrttBackdropBlob>,
     val darkBackdrop: List<MrttBackdropBlob>,
-    /** Геометрия: углы карточек и кнопок. */
     val geometry: MrttGeometry = MrttDefaultGeometry,
 )
 
-/** Цветное пятно на фоне: координаты и радиус — доли от размера экрана. */
 @Immutable
 data class MrttBackdropBlob(
     val x: Float,
@@ -39,7 +29,6 @@ data class MrttBackdropBlob(
 
 internal val LocalMrttStyle = staticCompositionLocalOf { MrttStyles.all.first() }
 
-/** Пятна текущего стиля для текущей темы. */
 internal val LocalMrttBackdrop = staticCompositionLocalOf<List<MrttBackdropBlob>> { emptyList() }
 
 object MrttStyles {
@@ -646,13 +635,11 @@ object MrttStyles {
         ),
     ) + MrttExtraStyles
 
-    /** Старые ключи из сохранённых настроек тоже должны открываться. */
     fun byId(id: String?): MrttStyle = when (id) {
         null, "", "brand", "pure_black" -> byId(DEFAULT_ID)
         else -> all.firstOrNull { it.id == id } ?: all.first()
     }
 }
 
-/** Для выпадающего списка: ключ → название. */
 val MrttStyleOptions: List<Pair<String, String>> =
     MrttStyles.all.map { it.id to it.label }

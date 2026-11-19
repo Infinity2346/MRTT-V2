@@ -6,11 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Итоги тарифа и график должны показывать ТЕКУЩУЮ сессию. Раньше после
- * возврата из фона на экране висели цифры прошлого тарифа: счётчики клиента
- * начинались заново, а база отсчёта оставалась старой.
- */
 class TrafficMonitorTest {
 
     @Before
@@ -120,6 +115,24 @@ class TrafficMonitorTest {
         TrafficMonitor.onIdleTick(now = 11_500)
         assertEquals(0f, totals().lastDownBps, 0f)
         assertEquals(0f, totals().lastUpBps, 0f)
+    }
+
+    @Test
+    fun tinyStatIntervalsDoNotTurnSmallBurstsIntoGigabitSpeeds() {
+        TrafficMonitor.onStats(up = 0, down = 0, active = 1, now = 10_000)
+        TrafficMonitor.onStats(up = 0, down = 4_000, active = 1, now = 10_010)
+
+        assertTrue("speed=${totals().lastDownBps}", totals().lastDownBps <= 20_000f)
+        assertTrue(totals().lastDownBps > 0f)
+    }
+
+    @Test
+    fun averageCountsOnlyPeriodsWithTraffic() {
+        TrafficMonitor.onStats(up = 0, down = 0, active = 1, now = 10_000)
+        TrafficMonitor.onStats(up = 0, down = 10_000, active = 1, now = 11_000)
+        TrafficMonitor.onStats(up = 0, down = 10_000, active = 1, now = 14_000)
+
+        assertEquals(10_000f, totals().avgDownBps, 1f)
     }
 
     @Test

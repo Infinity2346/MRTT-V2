@@ -68,10 +68,6 @@ internal val MrttDarkExtendedColors = MrttExtendedColors(
     terminalSuccess = Color(0xFF9BD4AF),
 )
 
-/**
- * Подмешивает акцент стиля в служебные цвета: баннеры, статусы и терминал
- * перестают быть «чужими» на фоне аниме или киберпанка.
- */
 internal fun MrttExtendedColors.tinted(accent: Color): MrttExtendedColors = copy(
     success = lerp(success, accent, 0.18f),
     successContainer = lerp(successContainer, accent, 0.20f),

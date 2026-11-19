@@ -8,19 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/**
- * Следит, какое приложение на экране, чтобы игровой режим включался сам.
- *
- * Android отдаёт имя активного приложения только через `UsageStatsManager` и только
- * с разрешением «Доступ к данным об использовании». Разрешение необязательное: если
- * его нет, автодетект просто молчит, а режим остаётся доступен вручную и по портам.
- */
 internal object ForegroundApp {
 
-    /** Игровой режим проверяем раз в 3 с: чаще незачем, а батарею это не ест. */
     private const val POLL_MS = 3_000L
 
-    /** Пакет считался игрой в последние 20 с? Значит, мы всё ещё в игре (свёрнутая пауза). */
     private const val FOREGROUND_WINDOW_MS = 20_000L
 
     fun hasUsageAccess(context: Context): Boolean {
@@ -45,7 +36,6 @@ internal object ForegroundApp {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    /** Пакет на экране сейчас; null, если разрешения нет или система не ответила. */
     fun currentPackage(context: Context): String? = runCatching {
         if (!hasUsageAccess(context)) return null
         val usage = context.getSystemService(Context.USAGE_STATS_SERVICE)
@@ -74,13 +64,6 @@ internal object ForegroundApp {
         foreground
     }.getOrNull()
 
-    /**
-     * Открывает системный список «Доступ к данным об использовании».
-     *
-     * На части прошивок общий экран списка приложений пуст или вообще не
-     * показывает сторонние приложения; тогда сразу открываем карточку MRTT
-     * в настройках приложений — оттуда «Использование данных» в один тап.
-     */
     fun openUsageAccessSettings(context: Context) {
         val attempts = listOf(
             android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS),
@@ -95,10 +78,6 @@ internal object ForegroundApp {
         }
     }
 
-    /**
-     * Цикл автодетекта: пока `running()` возвращает true, раз в [POLL_MS] читает
-     * активное приложение и сообщает его в [onForeground].
-     */
     suspend fun watch(
         context: Context,
         running: () -> Boolean,

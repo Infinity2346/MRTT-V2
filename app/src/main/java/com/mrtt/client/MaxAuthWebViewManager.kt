@@ -223,7 +223,6 @@ internal class MaxAuthSession(
         }
     }
 
-    /** Печатает имена ключей localStorage: по ним видно, где MAX хранит deviceId. */
     private fun listLocalStorageKeys() {
         val view = webView ?: return
         view.evaluateJavascript(LIST_KEYS_JS) { result ->
@@ -336,13 +335,6 @@ internal class MaxAuthSession(
             })();
         """
 
-        /**
-         * Список ключей localStorage, которые есть на странице MAX.
-         *
-         * Нужен только для диагностики: если deviceId не нашёлся ни одним из
-         * способов, в журнал попадают реальные имена ключей, и правку можно
-         * делать по факту, а не вслепую. Значения НЕ читаются.
-         */
         private const val LIST_KEYS_JS = """
             (function() {
                 try {

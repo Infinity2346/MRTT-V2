@@ -52,9 +52,6 @@ pub struct DtlsCertificate {
 
 static SERVER_CERTIFICATE: OnceLock<Arc<DtlsCertificate>> = OnceLock::new();
 
-/// Процессный сертификат сервера: генерируется один раз, а не на каждое рукопожатие.
-/// Один ключ и один отпечаток на весь сервер — клиенты видят стабильный идентификатор,
-/// а CPU не тратится на генерацию ECDSA-ключа для каждого ClientHello.
 pub fn shared_server_certificate() -> Result<Arc<DtlsCertificate>> {
     if let Some(certificate) = SERVER_CERTIFICATE.get() {
         return Ok(certificate.clone());
@@ -1478,8 +1475,6 @@ pub struct DtlsClientHandshake {
     peer_certificate: Option<Vec<u8>>,
     srtp_keys: Option<DtlsSrtpKeys>,
     incoming: Vec<Vec<u8>>,
-    /// Последний отправленный клиентский полёт: нужен, если сервер его не увидел
-    /// и повторил свой.
     last_client_flight: Option<Vec<u8>>,
 }
 
@@ -2027,8 +2022,6 @@ impl DtlsClientHandshake {
         Ok(datagram)
     }
 
-    /// Повторная отправка клиентского полёта после повтора серверного:
-    /// ключи и транскрипт уже посчитаны, поэтому отдаём тот же датаграмм заново.
     fn rebuild_client_flight(&mut self) -> Result<Vec<u8>> {
         // Транскрипт не менялся после первого отправления, поэтому тот же
         // датаграмм подходит и для повтора: пересобирать ключи не нужно.
@@ -2157,8 +2150,6 @@ impl DtlsServerHandshake {
         &self.certificate
     }
 
-    /// Последний отправленный полёт: его повторяем, когда клиент ретранслирует ClientHello,
-    /// вместо того чтобы начинать рукопожатие заново.
     pub fn last_flight(&self) -> Option<&[u8]> {
         self.last_flight.as_deref()
     }
@@ -2261,7 +2252,6 @@ impl DtlsServerHandshake {
         protector.protect(CONTENT_TYPE_APPLICATION_DATA, data)
     }
 
-    /// Полёт от клиента в незашифрованном epoch 0.
     fn handle_handshake_records(
         &mut self,
         fragment: &[u8],

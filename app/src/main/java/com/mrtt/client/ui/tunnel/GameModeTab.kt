@@ -67,12 +67,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Вкладка «Игры»: игровой режим, список игр и автовключение.
- *
- * Логика режима живёт в Rust-клиенте (закрепление потока за одним воркером),
- * здесь только переключатели и список игр.
- */
 @Composable
 fun GameModeTab(settingsStore: SettingsStore) {
     val context = LocalContext.current.applicationContext
