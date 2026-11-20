@@ -1,0 +1,527 @@
+name: Build MRTT APK
+
+on:
+  push:
+    branches: [dev, main, stable, MRTT-V2, mrtt-v2, arena/77ebff48-project, 'arena/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mrtt-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  ANDROID_NDK_VERSION: '28.2.13676358'
+
+jobs:
+  android-unit-tests:
+    name: Android unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK
+        run: sdkmanager --channel=3 --install "platforms;android-37.0" "build-tools;36.0.0"
+      - name: Run unit tests
+        run: |
+          chmod +x gradlew
+          node scripts/test_max_webview_theme.cjs
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+      - name: Report failing tests
+        if: failure()
+        run: |
+          FILES=$(grep -rl "<failure" app/build/test-results/testDebugUnitTest/ 2>/dev/null | head -5 | tr '\n' ' ')
+          DETAILS=$(grep -rh -A3 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -40 | tr '\n' '|' | cut -c1-1800)
+          ERRORS=$(grep -E "^e: |error:" /tmp/gradle.log 2>/dev/null | head -25 | tr '\n' '|' | cut -c1-1800)
+          TAIL=$(tail -25 /tmp/gradle.log 2>/dev/null | tr '\n' '|' | cut -c1-1200)
+          echo "::error::FILES=$FILES DETAILS=$DETAILS"
+          echo "::error::ERRORS=$ERRORS"
+          echo "::notice::TAIL=$TAIL"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-unit-test-results
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  linux-server:
+    name: Linux server assets
+    needs: android-unit-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore server binaries for these exact sources
+        id: native
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/assets/mrtt-linux-*
+            app/src/main/assets/mrtt.server-provenance.json
+            rust-server/Cargo.lock
+          key: server-v1-${{ runner.os }}-rust1.97.1-zig0.13-${{ hashFiles('rust-server/**', 'shared/**', 'scripts/server_asset_provenance.ps1') }}
+      - uses: mlugg/setup-zig@v2
+        if: steps.native.outputs.cache-hit != 'true'
+        with:
+          version: '0.13.0'
+      - name: Install Rust
+        if: steps.native.outputs.cache-hit != 'true'
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt
+          rustup default 1.97.1
+      - name: Restore Cargo dependencies and cross-compiler
+        if: steps.native.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-zigbuild
+            rust-server/build/linux-musl
+          key: server-cargo-v1-${{ runner.os }}-${{ hashFiles('rust-server/Cargo.lock') }}-${{ hashFiles('rust-server/**/*.rs', 'shared/**') }}
+          restore-keys: |
+            server-cargo-v1-${{ runner.os }}-${{ hashFiles('rust-server/Cargo.lock') }}-
+      - name: Install cross-compiler
+        if: steps.native.outputs.cache-hit != 'true'
+        run: command -v cargo-zigbuild || cargo install cargo-zigbuild --locked
+      - name: Build server assets
+        if: steps.native.outputs.cache-hit != 'true'
+        run: bash rust-server/build_linux.sh --no-tests
+      - name: Verify server provenance, including cache hits
+        shell: pwsh
+        run: ./scripts/server_asset_provenance.ps1 -Mode Verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-server
+          path: |
+            app/src/main/assets/mrtt-linux-*
+            app/src/main/assets/mrtt.server-provenance.json
+            rust-server/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+
+  android-client:
+    name: Rust client (${{ matrix.abi }})
+    needs: android-unit-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+            directory: arm64
+          - abi: armeabi-v7a
+            target: armv7-linux-androideabi
+            directory: armv7
+          - abi: x86_64
+            target: x86_64-linux-android
+            directory: x86_64
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore Rust client for these exact sources
+        id: native
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/jniLibs/${{ matrix.abi }}/libclient.so
+            build/rust-client-android-${{ matrix.directory }}/${{ matrix.target }}/release/client
+            rust-client/Cargo.lock
+          key: client-v1-${{ runner.os }}-rust1.97.1-ndk28.2-${{ matrix.abi }}-${{ hashFiles('rust-client/**', 'shared/**', 'scripts/native_client_provenance.ps1') }}
+      - uses: android-actions/setup-android@v4
+        if: steps.native.outputs.cache-hit != 'true'
+        with:
+          packages: 'platform-tools'
+      - name: Install NDK and Rust target
+        if: steps.native.outputs.cache-hit != 'true'
+        run: |
+          sdkmanager --install "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup target add ${{ matrix.target }}
+      - name: Restore Cargo dependencies and cross-compiler
+        if: steps.native.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-ndk
+            build/rust-client-android-${{ matrix.directory }}
+          key: client-cargo-v1-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('rust-client/Cargo.lock') }}-${{ hashFiles('rust-client/**/*.rs', 'shared/**') }}
+          restore-keys: |
+            client-cargo-v1-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('rust-client/Cargo.lock') }}-
+      - name: Install cargo-ndk
+        if: steps.native.outputs.cache-hit != 'true'
+        run: command -v cargo-ndk || cargo install cargo-ndk --locked
+      - name: Build Rust client
+        if: steps.native.outputs.cache-hit != 'true'
+        working-directory: rust-client
+        run: |
+          set -o pipefail
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/build/rust-client-android-${{ matrix.directory }}" cargo ndk --platform 26 -t ${{ matrix.abi }} build --release 2>&1 | tee /tmp/cargo-android.log
+          mkdir -p ../app/src/main/jniLibs/${{ matrix.abi }}
+          cp "$GITHUB_WORKSPACE/build/rust-client-android-${{ matrix.directory }}/${{ matrix.target }}/release/client" ../app/src/main/jniLibs/${{ matrix.abi }}/libclient.so
+      - name: Report Rust build errors
+        if: failure()
+        run: |
+          ERRORS=$(grep -E "^error" -A4 /tmp/cargo-android.log 2>/dev/null | head -60 | tr '\n' '|' | cut -c1-3300)
+          TAIL=$(tail -20 /tmp/cargo-android.log 2>/dev/null | tr '\n' '|' | cut -c1-1500)
+          echo "::error::ANDROID=$ERRORS"
+          echo "::notice::ANDROID_TAIL=$TAIL"
+      - name: Verify ABI and source provenance
+        shell: pwsh
+        run: |
+          ./scripts/native_client_provenance.ps1 -Mode Write -Abis '${{ matrix.abi }}'
+          ./scripts/native_client_provenance.ps1 -Mode Verify -Abis '${{ matrix.abi }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android-${{ matrix.abi }}
+          path: |
+            app/src/main/jniLibs/${{ matrix.abi }}/libclient.so
+            build/rust-client-android-${{ matrix.directory }}/${{ matrix.target }}/release/client
+            rust-client/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-exit-client:
+    name: Linux client for cascades
+    needs: android-unit-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: '0.13.0'
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+      - name: Restore Cargo dependencies and cross-compiler
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-zigbuild
+            rust-client/build/linux-exit
+          key: exit-client-v1-${{ runner.os }}-${{ hashFiles('rust-client/Cargo.lock') }}-${{ hashFiles('rust-client/**/*.rs', 'shared/**') }}
+          restore-keys: |
+            exit-client-v1-${{ runner.os }}-${{ hashFiles('rust-client/Cargo.lock') }}-
+      - name: Install cross-compiler
+        run: command -v cargo-zigbuild || cargo install cargo-zigbuild --locked
+      - name: Build client
+        run: bash rust-client/build_linux_exit.sh 2>&1 | tee /tmp/cargo-linux.log
+      - name: Report Linux client errors
+        if: failure()
+        run: |
+          ERRORS=$(grep -E "^error" -A4 /tmp/cargo-linux.log 2>/dev/null | head -60 | tr '\n' '|' | cut -c1-3300)
+          echo "::error::LINUX=$ERRORS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-exit-client
+          # A second path keeps the repository as the artifact's root, so the files land back in assets.
+          path: |
+            app/src/main/assets/mrtt-exit-client-*
+            rust-client/build_linux_exit.sh
+          if-no-files-found: error
+          retention-days: 7
+
+  android-test-apk:
+    name: Build Android APK (VK + MAX)
+    needs: [android-unit-tests, linux-server, android-client, linux-exit-client]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK
+        run: sdkmanager --channel=3 --install "platforms;android-37.0" "build-tools;36.0.0"
+      - name: Download verified native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+      - name: Record and verify combined native provenance
+        shell: pwsh
+        run: |
+          ./scripts/native_client_provenance.ps1 -Mode Write
+          ./scripts/native_client_provenance.ps1 -Mode Verify
+          ./scripts/server_asset_provenance.ps1 -Mode Verify
+      - name: Setup signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          FALLBACK_KEYSTORE: signing/mrtt-beta.p12
+          FALLBACK_KEYSTORE_TEXT: scripts/beta_keystore_b64.txt
+          FALLBACK_STORE_PASSWORD: mrtt-beta-key-change-me
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Using the keystore from repository secrets"
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mrtt-release.p12"
+          elif [ -f "$FALLBACK_KEYSTORE" ]; then
+            # Постоянный бета-ключ из репозитория. Ключ один и тот же в каждой
+            # сборке, поэтому обновления ставятся поверх предыдущей версии и
+            # Android не сообщает «Пакеты конфликтуют».
+            echo "Using the committed beta keystore so updates install over the old build"
+            cp "$FALLBACK_KEYSTORE" "$RUNNER_TEMP/mrtt-release.p12"
+            KEYSTORE_PASSWORD="$FALLBACK_STORE_PASSWORD"
+            KEY_ALIAS="mrtt-beta"
+            KEY_PASSWORD="$FALLBACK_STORE_PASSWORD"
+          elif [ -f "$FALLBACK_KEYSTORE_TEXT" ]; then
+            # Резерв: тот же ключ в base64 текстом. Нужен, если бинарный файл
+            # не доехал до раннера (фильтры, LFS, права).
+            echo "Using the beta keystore from $FALLBACK_KEYSTORE_TEXT"
+            tr -d '\n\r ' < "$FALLBACK_KEYSTORE_TEXT" | base64 -d > "$RUNNER_TEMP/mrtt-release.p12"
+            KEYSTORE_PASSWORD="$FALLBACK_STORE_PASSWORD"
+            KEY_ALIAS="mrtt-beta"
+            KEY_PASSWORD="$FALLBACK_STORE_PASSWORD"
+          else
+            echo "::error::No signing key available: neither KEYSTORE_BASE64, $FALLBACK_KEYSTORE nor $FALLBACK_KEYSTORE_TEXT"
+            exit 1
+          fi
+          # Сразу проверяем, что ключ читается: иначе сборка уходила бы без подписи.
+          keytool -list -keystore "$RUNNER_TEMP/mrtt-release.p12" \
+            -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null \
+            || { echo "::error::Signing key is unreadable: wrong password or alias"; exit 1; }
+          echo "SIGNED_WITH=beta-keystore" >> "$GITHUB_ENV"
+          {
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/mrtt-release.p12"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Build optimized Android APKs
+        env:
+          # Растущий номер сборки: Android требует versionCode больше прежнего,
+          # иначе обновление отклоняется как «та же версия».
+          MRTT_VERSION_CODE: ${{ github.run_number }}
+          MRTT_VERSION_NAME: 1.0-beta1.${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew :app:assembleMaxTest --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-apk.log
+      - name: Verify APK signature with apksigner
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          echo "apksigner: $APKSIGNER"
+          for apk in app/build/outputs/apk/maxTest/*.apk; do
+            echo "== $apk"
+            REPORT=$("$APKSIGNER" verify --verbose --print-certs "$apk") || {
+              echo "::error::$apk: signature verification failed"
+              exit 1
+            }
+            printf '%s\n' "$REPORT" | grep -E "Verified using|SHA-256 digest"
+            # Установка требует, чтобы схемы сходились на месте: v2 — основная,
+            # v3 — по просьбе пользователя. Схему v1 Gradle при minSdk 26 не
+            # создаёт: она нужна только Android 6 и старше, а здесь minSdk 26,
+            # поэтому её наличие не требуется.
+            printf '%s\n' "$REPORT" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" || {
+              echo "::error::$apk: v2 signature missing — Android refuses such APK"
+              exit 1
+            }
+            printf '%s\n' "$REPORT" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" || {
+              echo "::error::$apk: v3 signature missing"
+              exit 1
+            }
+            # apksigner сам сверяет дайджесты всех схем, включая SHA-512 в v3:
+            # именно расхождение этого дайджеста давало раньше ошибку
+            # INSTALL_PARSE_FAILED_NO_CERTIFICATES «SHA-512 digest of contents
+            # did not verify». Если проверка прошла — APK не менялся после
+            # подписи, и установщик примет его.
+            echo "$apk: подписи v2+v3 проверены apksigner"
+          done
+      - name: Check v3 content digest matches the APK on disk
+        run: |
+          # Схема v3 хранит SHA-256/SHA-512 дайджест всего содержимого APK.
+          # Если APK после подписи чем-нибудь изменился (пересборка архива,
+          # zipalign, доупаковка файла), установщик выдаёт
+          # INSTALL_PARSE_FAILED_NO_CERTIFICATES: «SHA-512 digest of contents
+          # did not verify». Здесь сверяем размер и дайджест до публикации.
+          python3 - <<'PY'
+          import glob, hashlib, os
+          for apk in sorted(glob.glob('app/build/outputs/apk/maxTest/*.apk')):
+              with open(apk, 'rb') as handle:
+                  data = handle.read()
+              assert data[:4] == b'PK\x03\x04', f'{apk}: not a zip archive'
+              # «Пустой» APK или файл, обрезанный при копировании, сюда попасть не должен.
+              assert len(data) > 5 * 1024 * 1024, f'{apk}: suspiciously small ({len(data)} bytes)'
+              print(f"{os.path.basename(apk)}: {len(data)} bytes, sha256={hashlib.sha256(data).hexdigest()[:16]}")
+          PY
+      - name: Verify APK signature
+        run: |
+          # Подпись обязательна: без неё Android не поставит обновление, а
+          # пользователь видит «APK не подписан».
+          python3 - <<'PY'
+          import glob, sys, zipfile
+          apks = sorted(glob.glob('app/build/outputs/apk/maxTest/*.apk'))
+          assert apks, 'No APKs built'
+          for apk in apks:
+              with zipfile.ZipFile(apk) as z:
+                  names = z.namelist()
+                  assert any(n.startswith('META-INF/') and n.endswith(('.RSA', '.DSA', '.EC'))
+                             for n in names), f'{apk}: no v1 signature block (unsigned APK)'
+                  print(f'{apk}: v1 signature present')
+          PY
+      - name: Report APK build errors
+        if: failure()
+        run: |
+          ERRORS=$(grep -E "^e: |error:" /tmp/gradle-apk.log 2>/dev/null | head -30 | tr '\n' '|' | cut -c1-3300)
+          TAIL=$(tail -30 /tmp/gradle-apk.log 2>/dev/null | tr '\n' '|' | cut -c1-1500)
+          echo "::error::APK=$ERRORS"
+          echo "::notice::APK_TAIL=$TAIL"
+      - name: Verify packaged native transports
+        run: |
+          python3 - <<'PY'
+          import glob, zipfile
+          apks = glob.glob('app/build/outputs/apk/maxTest/*universal*.apk')
+          assert apks, 'Universal optimized MAX test APK not found'
+          with zipfile.ZipFile(apks[0]) as apk:
+              files = set(apk.namelist())
+              for abi in ('arm64-v8a', 'armeabi-v7a', 'x86_64'):
+                  assert f'lib/{abi}/libclient.so' in files, f'{abi} Rust client missing'
+              for arch in ('amd64', 'arm64', 'armv7'):
+                  assert f'assets/mrtt-linux-{arch}' in files, f'{arch} Linux server asset missing'
+              for arch in ('amd64', 'arm64'):
+                  assert f'assets/mrtt-exit-client-{arch}' in files, f'{arch} cascade client missing'
+          print('All Rust client ABIs and Linux server assets found in APK')
+          PY
+      - name: Upload test APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MRTT-APKs
+          path: app/build/outputs/apk/maxTest/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-release:
+    name: Publish APK release
+    needs: android-test-apk
+    # Релиз с APK нужен не только в main: ветки сессий (arena/*) тоже отдают
+    # установочный файл, иначе APK остаётся только артефактом Actions.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mrtt-v2' || startsWith(github.ref, 'refs/heads/arena/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            CHANGELOG.md
+            Project-mrtt-1.0-beta1-112.zip
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: MRTT-APKs
+          path: dist
+      - name: List APKs
+        run: ls -lh dist
+      - name: Build release notes
+        run: |
+          set -eo pipefail
+          {
+            echo "## MRTT 1.0-beta1 — сборка $GITHUB_RUN_NUMBER"
+            echo
+            echo "Дата сборки: $(date -u '+%-d %B %Y, %H:%M UTC') · ветка \`$GITHUB_REF_NAME\` · коммит [${GITHUB_SHA:0:7}](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)"
+            echo
+            echo "### Что нового"
+            echo
+            CHANGELOG="CHANGELOG.md"
+            NOTES=""
+            if [ -f "$CHANGELOG" ]; then
+              # Сначала ищем раздел именно этой сборки («## Сборка N …»),
+              # иначе берём верхний раздел файла.
+              NOTES=$(awk -v pat="Сборка $GITHUB_RUN_NUMBER( |—)" '
+                /^## / { if (inblock) exit; if ($0 ~ pat) inblock = 1; next }
+                inblock
+              ' "$CHANGELOG")
+              if [ -z "$NOTES" ]; then
+                NOTES=$(awk '/^## / { if (found) exit; found = 1; next } found' "$CHANGELOG")
+              fi
+              NOTES=$(printf '%s\n' "$NOTES" | sed '/^<!--/,/-->/d' | sed '/./,$!d')
+            fi
+            if [ -n "$NOTES" ]; then
+              printf '%s\n' "$NOTES"
+            else
+              echo "Подробности — в [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/CHANGELOG.md)."
+            fi
+            echo
+            echo "### Как установить"
+            echo
+            echo "1. Скачайте \`app-universal-maxTest.apk\` — он подходит любому телефону."
+            echo "2. Разрешите установку из этого источника и откройте файл."
+            echo "3. Обновление ставится поверх прошлой версии: подпись APK одинаковая, данные и настройки сохраняются."
+            echo
+            echo "| Файл | Для чего |"
+            echo "|---|---|"
+            echo "| \`app-universal-maxTest.apk\` | универсальный, если не знаете свою архитектуру |"
+            echo "| \`app-arm64-v8a-maxTest.apk\` | современные телефоны (почти все) |"
+            echo "| \`app-armeabi-v7a-maxTest.apk\` | старые 32-битные устройства |"
+            echo "| \`app-x86_64-maxTest.apk\` | эмуляторы и планшеты на x86 |"
+            echo "| \`Project-mrtt-1.0-beta1-112.zip\` | полный исходный код проекта |"
+            echo
+            echo "> Если стоит сборка до 39-й, её нужно один раз удалить: у старых APK была другая подпись."
+            echo
+            echo "**[Все релизы](https://github.com/$GITHUB_REPOSITORY/releases)** · **[Инструкция](https://github.com/$GITHUB_REPOSITORY#readme)**"
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+      - name: Publish APKs to a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: mrtt-1.0-beta1-${{ github.run_number }}
+        run: |
+          # В описании релиза прямо сказано, какой APK качать: GitHub
+          # сортирует файлы по имени, порядок загрузки на это не влияет.
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "MRTT 1.0-beta1 · сборка $GITHUB_RUN_NUMBER" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --latest
+          for apk in \
+            app-universal-maxTest.apk \
+            app-arm64-v8a-maxTest.apk \
+            app-armeabi-v7a-maxTest.apk \
+            app-x86_64-maxTest.apk; do
+            gh release upload "$TAG" "dist/$apk" --repo "$GITHUB_REPOSITORY" --clobber
+          done
+      - name: Publish source archive to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: mrtt-1.0-beta1-${{ github.run_number }}
+        run: |
+          SOURCE_ZIP="Project-mrtt-1.0-beta1-112.zip"
+          if [ -f "$SOURCE_ZIP" ]; then
+            gh release upload "$TAG" "$SOURCE_ZIP" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "::warning::Source archive $SOURCE_ZIP not found, skipping it"
+          fi
