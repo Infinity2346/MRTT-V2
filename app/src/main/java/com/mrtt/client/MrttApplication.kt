@@ -18,6 +18,8 @@ class MrttApplication : Application() {
         val settingsStore = SettingsStore(this)
         CoroutineScope(SupervisorJob() + Dispatchers.Main).launch {
             try {
+                settingsStore.migrateOperatorRouting()
+                CarrierAppExclusion.apply(this@MrttApplication, settingsStore)
                 settingsStore.loggingEnabled.collect { enabled ->
                     TunnelManager.isLoggingEnabled = enabled
                 }

@@ -171,6 +171,20 @@ class SettingsStore(context: Context) {
         private val AUTO_PAUSE_ON_WIFI = booleanPreferencesKey("auto_pause_on_wifi")
 
         private val AUTO_CONNECT_ON_LAUNCH = booleanPreferencesKey("auto_connect_on_launch")
+        private val OPERATOR_ROUTING_MIGRATED = booleanPreferencesKey("operator_routing_migrated_v1")
+
+        internal val OPERATOR_DOMAINS = listOf(
+            "beeline.ru",
+            "danycom.ru",
+            "megafon.ru",
+            "mts.ru",
+            "rostelecom.ru",
+            "sbermobile.ru",
+            "tele2.ru",
+            "tinkoffmobile.ru",
+            "yota.ru",
+            "yota.tv",
+        )
         private val BATTERY_SAVER_MODE = stringPreferencesKey("battery_saver_mode")
         private val BATTERY_SAVER_PERCENT = intPreferencesKey("battery_saver_percent")
         private val DOMAIN_ROUTING_ENABLED = booleanPreferencesKey("domain_routing_enabled")
@@ -878,6 +892,7 @@ class SettingsStore(context: Context) {
                 migrateConnectionPasswordsToLocalStorage()
                 migrateSecretsToKeystore()
                 migrateLegacyWhitelistMode()
+                migrateOperatorRouting()
             }
         }
         if (uiCacheStarted.compareAndSet(false, true)) {
@@ -1338,6 +1353,18 @@ class SettingsStore(context: Context) {
         dataStore.edit { prefs ->
             val profile = prefs[ACTIVE_PROFILE] ?: 0
             prefs[getProfileKey(EXCLUDED_APPS, profile)] = packages
+            prefs[SPLIT_TUNNEL_WHITELIST_MIGRATED] = true
+        }
+    }
+
+    suspend fun addExcludedAppsForAllProfiles(packages: Set<String>) {
+        if (packages.isEmpty()) return
+        dataStore.edit { prefs ->
+            for (profile in MrttConstants.Profiles.MIN_INDEX..MrttConstants.Profiles.MAX_INDEX) {
+                val key = getProfileKey(EXCLUDED_APPS, profile)
+                val existing = prefs[key]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+                prefs[key] = (existing + packages).sorted().joinToString(",")
+            }
             prefs[SPLIT_TUNNEL_WHITELIST_MIGRATED] = true
         }
     }
@@ -1934,6 +1961,29 @@ class SettingsStore(context: Context) {
             }
 
             prefs[SPLIT_TUNNEL_WHITELIST_MIGRATED] = true
+        }
+    }
+
+    suspend fun migrateOperatorRouting() {
+        val initial = dataStore.data.first()
+        if (initial[OPERATOR_ROUTING_MIGRATED] == true) return
+        dataStore.edit { prefs ->
+            if (prefs[OPERATOR_ROUTING_MIGRATED] == true) return@edit
+            for (profile in MrttConstants.Profiles.MIN_INDEX..MrttConstants.Profiles.MAX_INDEX) {
+                prefs[getProfileKey(DOMAIN_ROUTING_ENABLED, profile)] = true
+                prefs[getProfileKey(DOMAIN_IS_WHITELIST, profile)] = false
+                prefs[getProfileKey(GEOSITE_RU_ENABLED, profile)] = true
+                prefs[getProfileKey(EXCLUDE_RU_ZONES_ENABLED, profile)] = true
+                val existing = prefs[getProfileKey(DIRECT_DOMAINS_BLACK, profile)]
+                    ?: prefs[getProfileKey(DIRECT_DOMAINS, profile)]
+                    ?: ""
+                val domains = (existing.split(Regex("[,\\s]+")).filter { it.isNotBlank() } + OPERATOR_DOMAINS)
+                    .distinct()
+                    .sorted()
+                    .joinToString(",")
+                prefs[getProfileKey(DIRECT_DOMAINS_BLACK, profile)] = domains
+            }
+            prefs[OPERATOR_ROUTING_MIGRATED] = true
         }
     }
 
