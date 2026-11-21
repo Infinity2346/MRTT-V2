@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class TunVpnService : VpnService() {
     private val serviceJob = SupervisorJob()
@@ -381,6 +382,7 @@ class TunVpnService : VpnService() {
                 // маршруты остаются в туннеле, иначе клиент не увидел бы их пакеты
                 // и не смог бы ни вырезать рекламу, ни отправить поток мимо.
                 excluded.removeAll(appDirect)
+                excluded.addAll(withContext(Dispatchers.IO) { CarrierAppExclusion.detect(applicationContext) })
                 excluded
                     .filter { it != applicationContext.packageName && isPackageInstalled(it) }
                     .forEach { pkg ->

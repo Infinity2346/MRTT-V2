@@ -13,6 +13,8 @@ class CarrierAppExclusionTest {
         assertTrue(CarrierAppExclusion.matches("com.megafon", "МегаФон"))
         assertTrue(CarrierAppExclusion.matches("com.tele2", "Мой Теле2"))
         assertTrue(CarrierAppExclusion.matches("com.rostelecom.ru", "Ростелеком"))
+        assertTrue(CarrierAppExclusion.matches("com.yota.some.plugin", "Yota"))
+        assertTrue(CarrierAppExclusion.matches("ru.yota.android", "Мобильный оператор"))
     }
 
     @Test
