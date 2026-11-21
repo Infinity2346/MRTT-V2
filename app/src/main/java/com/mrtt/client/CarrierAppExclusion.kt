@@ -6,14 +6,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal object CarrierAppExclusion {
-    private const val PREFS_NAME = "mrtt_carrier_exclusion"
-    private const val DONE_KEY = "applied_v1"
-
     private val PACKAGE_PREFIXES = listOf(
         "ru.yota",
+        "com.yota",
         "com.beeline",
+        "ru.beeline",
         "com.mts",
+        "ru.mts",
         "com.megafon",
+        "ru.megafon",
         "com.tele2",
         "ru.tele2",
         "com.rostelecom",
@@ -42,6 +43,7 @@ internal object CarrierAppExclusion {
         "tinkoff mobile",
         "тинькофф мобайл",
         "danycom",
+        "дани ком",
     )
 
     internal fun matches(packageName: String, label: String): Boolean {
@@ -65,16 +67,11 @@ internal object CarrierAppExclusion {
     }
 
     suspend fun apply(context: Context, settingsStore: SettingsStore) = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.getBoolean(DONE_KEY, false)) return@withContext
-
         val detected = detect(context)
-        if (detected.isNotEmpty()) {
-            settingsStore.addExcludedAppsForAllProfiles(detected)
-            if (TunnelManager.running.value) {
-                withContext(Dispatchers.Main) { TunnelManager.reloadVpn() }
-            }
+        if (detected.isEmpty()) return@withContext
+        val changed = settingsStore.addExcludedAppsForAllProfiles(detected)
+        if (changed && TunnelManager.running.value) {
+            withContext(Dispatchers.Main) { TunnelManager.reloadVpn() }
         }
-        prefs.edit().putBoolean(DONE_KEY, true).apply()
     }
 }

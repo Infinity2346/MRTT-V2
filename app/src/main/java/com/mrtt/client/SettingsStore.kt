@@ -1357,16 +1357,22 @@ class SettingsStore(context: Context) {
         }
     }
 
-    suspend fun addExcludedAppsForAllProfiles(packages: Set<String>) {
-        if (packages.isEmpty()) return
+    suspend fun addExcludedAppsForAllProfiles(packages: Set<String>): Boolean {
+        if (packages.isEmpty()) return false
+        var changed = false
         dataStore.edit { prefs ->
             for (profile in MrttConstants.Profiles.MIN_INDEX..MrttConstants.Profiles.MAX_INDEX) {
                 val key = getProfileKey(EXCLUDED_APPS, profile)
                 val existing = prefs[key]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
-                prefs[key] = (existing + packages).sorted().joinToString(",")
+                val merged = existing + packages
+                if (merged != existing) {
+                    prefs[key] = merged.sorted().joinToString(",")
+                    changed = true
+                }
             }
             prefs[SPLIT_TUNNEL_WHITELIST_MIGRATED] = true
         }
+        return changed
     }
 
     suspend fun saveWhitelistApps(packages: String) {
